@@ -1,0 +1,12 @@
+*.dat
+*.bz2
+*.onnx
+*.mp4
+*.avi
+*.mov
+data/
+models/
+__pycache__/
+.ipynb_checkpoints/
+.venv/
+.DS_Store
