@@ -1,4 +1,4 @@
-"""EAR branch: face (Haar) -> 68 landmarks (dlib) -> eye aspect ratio -> open / closed -> window statistics.
+"""EAR branch: face box (YuNet, Haar as fallback) -> 68 landmarks (dlib) -> eye aspect ratio -> open / closed -> window statistics.
 Same code as EAR_Detection.ipynb, wrapped in the common Branch interface for fusion."""
 import os
 from collections import deque
@@ -11,6 +11,8 @@ from drowsiness.common.branch import WindowedBranch
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LANDMARK_MODEL = os.path.join(ROOT, "shape_predictor_68_face_landmarks.dat")
+YUNET_MODEL = os.path.join(ROOT, "models/face_detection_yunet_2023mar.onnx")
+DETECT_WIDTH = 640            # big frames are shrunk to this width for YuNet only
 DEFAULT_THRESHOLD = 0.20      # fallback when no calibration is possible
 MIN_CONF = 0.3                # below this a frame is "UNKNOWN", not OPEN/CLOSED
 
@@ -83,6 +85,9 @@ class EarBranch(WindowedBranch):
         self._res = None
 
     def start(self):
+        # YuNet finds the face in more frames than Haar and is faster; Haar stays as a fallback, so this branch
+        # still has a face box when YuNet misses (and does not fail together with the CNN branch's detector).
+        self.yunet = cv2.FaceDetectorYN.create(YUNET_MODEL, "", (320, 320), 0.6, 0.3, 5000) if os.path.exists(YUNET_MODEL) else None
         self.face_detector = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
         self.landmarks = dlib.shape_predictor(LANDMARK_MODEL)
 
@@ -110,13 +115,28 @@ class EarBranch(WindowedBranch):
         self._push(t, res["state"], res["confidence"])
         return self.latest()
 
+    def _face_box(self, frame, gray):
+        """Largest face as (x, y, w, h): YuNet first, Haar if YuNet finds nothing."""
+        if self.yunet is not None:
+            scale = min(1.0, DETECT_WIDTH / frame.shape[1])
+            small = cv2.resize(frame, None, fx=scale, fy=scale) if scale < 1 else frame
+            self.yunet.setInputSize((small.shape[1], small.shape[0]))
+            _, faces = self.yunet.detect(small)
+            if faces is not None:
+                x, y, w, h = max(faces, key=lambda r: r[2] * r[3])[:4] / scale
+                return int(x), int(y), int(w), int(h)
+        faces = self.face_detector.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(80, 80))
+        if len(faces) == 0:
+            return None
+        return tuple(int(v) for v in max(faces, key=lambda r: r[2] * r[3]))
+
     def _process(self, frame):
         res = dict(face_box=None, eyes=None, ear=np.nan, state="UNKNOWN", confidence=0.0, factors={})
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = self.face_detector.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(80, 80))
-        if len(faces) == 0:
+        box = self._face_box(frame, gray)
+        if box is None:
             return res
-        x, y, w, h = max(faces, key=lambda r: r[2] * r[3])
+        x, y, w, h = box
         shape = self.landmarks(gray, dlib.rectangle(int(x), int(y), int(x + w), int(y + h)))
         points = np.array([(p.x, p.y) for p in shape.parts()])
         left_eye, right_eye = points[36:42], points[42:48]
