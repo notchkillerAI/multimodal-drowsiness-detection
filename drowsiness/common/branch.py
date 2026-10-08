@@ -54,11 +54,6 @@ class WindowedBranch(Branch):
         self._t.append(t); self._state.append(state); self._conf.append(confidence)
         while t - self._t[0] > self.window_s:
             self._t.popleft(); self._state.popleft(); self._conf.popleft()
-        out = channel_output(self._t, self._state, self._conf, self.window_s)
-
-        # Fusion needs to know how reliable the branch is *now*, so the contract's confidence is the mean
-        # over the last few seconds; the 30 s mean stays available in raw.
-        recent = [c for tt, c in zip(self._t, self._conf) if tt >= t - self.conf_window_s]
-        out["raw"]["window_confidence"] = out["confidence"]
-        out["confidence"] = float(sum(recent) / len(recent))
-        self._publish(out)
+        # Fusion needs to know how reliable the branch is *now*: confidence is the mean over the last few seconds,
+        # capped by the last half second so that it falls at once when the face or eyes are lost.
+        self._publish(channel_output(self._t, self._state, self._conf, self.window_s, conf_window_s=self.conf_window_s))

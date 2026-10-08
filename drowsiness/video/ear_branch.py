@@ -35,7 +35,7 @@ def calibrate_threshold(open_ears, fallback, min_samples=30):
     return float(np.clip(0.7 * np.median(open_ears), 0.12, 0.30))
 
 
-def eye_confidence(gray, left_eye, right_eye, prev_eyes=None):
+def eye_confidence(gray, left_eye, right_eye, prev_eyes=None, face_box=None, ears=None):
     """Return (confidence, factors). Each factor is in [0,1]; confidence = min of them."""
     height, width = gray.shape
     eyes = np.vstack([left_eye, right_eye]).astype(float)
@@ -56,7 +56,18 @@ def eye_confidence(gray, left_eye, right_eye, prev_eyes=None):
         shift = np.linalg.norm(eyes - prev_eyes, axis=1).mean() / max(distance(left_eye.mean(0), right_eye.mean(0)), 1e-6)
         stable = 1.0 - clip01((shift - 0.05) / 0.25)
 
-    factors = dict(size=size, pose=pose, inside=inside, light=light, stable=stable)
+    # agree: both eyes should give a similar EAR; a big gap means one eye is hidden or its landmarks are wrong
+    agree = 1.0 if ears is None else 1.0 - clip01((abs(ears[0] - ears[1]) - 0.08) / 0.12)
+
+    # inbox: the eye points must lie in the upper part of the detected face box (guards against a false
+    # face detection or a badly fitted landmark set)
+    inbox = 1.0
+    if face_box is not None:
+        fx, fy, fw, fh = face_box
+        in_box = (eyes[:, 0] >= fx) & (eyes[:, 0] <= fx + fw) & (eyes[:, 1] >= fy) & (eyes[:, 1] <= fy + 0.65 * fh)
+        inbox = clip01((in_box.mean() - 0.5) / 0.5)
+
+    factors = dict(size=size, pose=pose, inside=inside, light=light, stable=stable, agree=agree, inbox=inbox)
     return min(factors.values()), factors
 
 
@@ -111,7 +122,7 @@ class EarBranch(WindowedBranch):
         left_eye, right_eye = points[36:42], points[42:48]
 
         ear = (calculate_ear(left_eye) + calculate_ear(right_eye)) / 2.0
-        confidence, factors = eye_confidence(gray, left_eye, right_eye, self._prev_eyes)
+        confidence, factors = eye_confidence(gray, left_eye, right_eye, self._prev_eyes, (x, y, w, h), (calculate_ear(left_eye), calculate_ear(right_eye)))
         state = "UNKNOWN" if confidence < MIN_CONF else ("CLOSED" if ear < self.threshold else "OPEN")
         res.update(face_box=(x, y, w, h), eyes=np.vstack([left_eye, right_eye]).astype(float),
                    ear=ear, state=state, confidence=confidence, factors=factors)

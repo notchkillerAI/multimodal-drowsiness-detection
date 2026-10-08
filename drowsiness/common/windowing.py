@@ -89,10 +89,14 @@ def calculate_drowsiness_score(perclos, longest_closure, blink_frequency, observ
     return min(score, 1.0)
 
 
-def channel_output(times, states, confs, window_s=30.0):
+def channel_output(times, states, confs, window_s=30.0, conf_window_s=None, recent_s=0.5):
     """Summarise the last `window_s` seconds into the branch output contract:
-    {score, confidence, raw, timestamp}. Confidence is the mean frame confidence,
-    so lost faces (confidence 0) pull it down."""
+    {score, confidence, raw, timestamp}.
+
+    Confidence = min(mean frame confidence over `conf_window_s` (default: the whole window),
+                     mean frame confidence over the last `recent_s`).
+    So it falls within half a second when the face or eyes disappear (the recent part) instead of
+    still claiming the old verdict is reliable, and it recovers slowly (the long part)."""
     times = np.asarray(times, dtype=float)
     keep = times >= times[-1] - window_s
     t = times[keep]
@@ -107,6 +111,9 @@ def channel_output(times, states, confs, window_s=30.0):
     blinks_n = sum(x["duration"] <= BLINK_MAX_DURATION for x in closures_ok)
     longest = max([x["duration"] for x in closures_ok], default=0.0)
 
+    long_part = c[t >= t[-1] - (conf_window_s or window_s)].mean()
+    recent_part = c[t >= t[-1] - recent_s].mean()
+
     n_known = sum(st != "UNKNOWN" for st in s)
     perclos = sum(st == "CLOSED" for st in s) / n_known if n_known else float("nan")
     observed = float(t[-1] - t[0])
@@ -114,7 +121,7 @@ def channel_output(times, states, confs, window_s=30.0):
 
     return {
         "score": calculate_drowsiness_score(perclos, longest, blink_rate, observed * n_known / len(s)),
-        "confidence": float(c.mean()),
+        "confidence": float(min(long_part, recent_part)),
         "raw": {
             "eyes_closed": ongoing,
             "current_closure_s": current_closure,
@@ -124,6 +131,7 @@ def channel_output(times, states, confs, window_s=30.0):
             "blink_rate_per_min": blink_rate,
             "perclos": perclos,
             "face_found_share": n_known / len(s),
+            "window_confidence": float(c.mean()),
             "window_s": observed,
         },
         "timestamp": float(t[-1]),

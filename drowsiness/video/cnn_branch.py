@@ -51,6 +51,7 @@ def input_confidence(face, eyes, crops, inside, p, prev_eyes):
         "inside": clip01((min(inside) - 0.6) / 0.4),
         "light": min(clip01((brightness - 35) / 35), clip01((240 - brightness) / 30)),
         "agree": 1 - clip01((abs(p[0] - p[1]) - 0.3) / 0.5),         # the two eyes should agree
+        "certain": clip01((max(p.mean(), 1 - p.mean()) - 0.5) / 0.2),  # an undecided network is not a verdict
         "stable": 1.0,
     }
     if prev_eyes is not None:

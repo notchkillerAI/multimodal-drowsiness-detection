@@ -78,7 +78,7 @@ def test_graded_levels_without_flicker():
 
 def test_microsleep_alerts_immediately_even_with_low_fused_score():
     f = Fusion(trust={"ear": 0.25, "cnn": 0.25}, smooth_s=3.0)
-    res = f.step(0.0, {"ear": out(0.1, closure=2.5), "cnn": out(0.1)})
+    res = f.step(0.0, {"ear": out(0.1, closure=2.5), "cnn": out(0.1, closure=2.4)})
     assert res["level"] == MICROSLEEP and "ear" in res["reason"]
 
 
@@ -86,3 +86,33 @@ def test_microsleep_ignores_low_confidence_branch():
     f = Fusion(trust={"ear": 0.25, "cnn": 0.25}, smooth_s=0)
     res = f.step(0.0, {"ear": out(0.1, conf=0.1, closure=2.5), "cnn": out(0.1)})
     assert res["level"] != MICROSLEEP
+
+
+def test_microsleep_needs_a_confident_branch():
+    f = Fusion(trust={"ear": 0.25, "cnn": 0.25}, smooth_s=0)
+    res = f.step(0.0, {"ear": out(0.1, conf=0.0), "cnn": out(0.6, conf=0.4, closure=3.0)})
+    assert res["level"] != MICROSLEEP                        # 0.4 is not confident enough for an immediate alarm
+
+
+def test_confident_branch_seeing_open_eyes_vetoes_microsleep():
+    f = Fusion(trust={"ear": 0.25, "cnn": 0.25}, smooth_s=0)
+    res = f.step(0.0, {"ear": out(0.1, conf=0.9, closure=0.0), "cnn": out(0.9, conf=0.9, closure=3.0)})
+    assert res["level"] != MICROSLEEP and "vetoed" in res["reason"]
+
+
+def test_both_branches_agreeing_still_gives_microsleep():
+    f = Fusion(trust={"ear": 0.25, "cnn": 0.25}, smooth_s=0)
+    res = f.step(0.0, {"ear": out(0.9, conf=0.9, closure=2.5), "cnn": out(0.9, conf=0.9, closure=3.0)})
+    assert res["level"] == MICROSLEEP
+
+
+def test_short_outage_pauses_the_persistence_timer_but_a_long_one_resets_it():
+    f = Fusion(trust={"ear": 1.0}, smooth_s=0, persist_s=3.0, hold_s=5.0)
+    run(f, 2, {"ear": 0.9})                                   # 2 s above 0.6
+    run(f, 2, {"ear": 0.9}, conf=0.0, start=2)                # face lost for 2 s: no verdict, timer paused
+    after = run(f, 1.5, {"ear": 0.9}, start=4)                # 1 s more needed -> DROWSY within 1.5 s
+    assert DROWSY in after
+    f2 = Fusion(trust={"ear": 1.0}, smooth_s=0, persist_s=3.0, hold_s=5.0)
+    run(f2, 2, {"ear": 0.9})
+    run(f2, 8, {"ear": 0.9}, conf=0.0, start=2)               # 8 s outage: start again
+    assert DROWSY not in run(f2, 1.5, {"ear": 0.9}, start=10)

@@ -19,7 +19,8 @@ ACTION = {ALERT: "none", EARLY_WARNING: "gentle visual cue", DROWSY: "sound alar
 # ALERT here means "attentive, nothing to do" (the name used in the project's level table).
 
 DEFAULT_TRUST = {"ear": 0.25, "cnn": 0.25, "eog": 0.30, "eeg": 0.20}   # starting values, to be tuned on data
-MIN_BRANCH_CONF = 0.3          # a branch below this confidence cannot trigger the microsleep rule
+MIN_BRANCH_CONF = 0.5          # an immediate alarm needs a branch that is at least this confident ...
+CONTRADICT_CONF = 0.3          # ... and no other eye branch at least this confident may say the eyes are open
 
 
 class Hysteresis:
@@ -51,6 +52,7 @@ class Fusion:
         self.smoothed, self._last_t, self._last_good_t, self._above_since = None, None, None, None
         self.drowsy = False
         self.warn.active = False
+        self._vetoed = []
 
     def step(self, t, outputs):
         """outputs: {branch name: branch.latest()} for the branches that are switched on (None = no data yet)."""
@@ -75,13 +77,23 @@ class Fusion:
             b["contribution"] = b["share"] * b["score"] if b["score"] is not None else 0.0   # points of the fused score
 
         # 5. microsleep rule (checked first because it must never wait) --------------------------------
+        # An immediate alarm must not rest on one doubtful sensor (a dark patch such as sunglasses looks like a
+        # closed eye): the branch must be confident, and a confident branch that sees open eyes vetoes it.
         closed_by = {n: b["raw"].get("current_closure_s", 0.0) for n, b in branches.items()
                      if b["status"] == "ok" and b["confidence"] >= MIN_BRANCH_CONF
                      and b["raw"].get("current_closure_s", 0.0) >= self.microsleep_s}
+        vetoed_by = [n for n, b in branches.items()
+                     if b["status"] == "ok" and b["confidence"] >= CONTRADICT_CONF and "current_closure_s" in b["raw"]
+                     and b["raw"]["current_closure_s"] < 0.5 * self.microsleep_s]
+        self._vetoed = vetoed_by if (vetoed_by and any(
+            b["status"] == "ok" and b["confidence"] >= MIN_BRANCH_CONF and b["raw"].get("current_closure_s", 0.0) >= self.microsleep_s
+            for b in branches.values())) else []
+        if vetoed_by:
+            closed_by = {}
 
         # 2. smoothing ------------------------------------------------------------------------------------
+        dt = 0.0 if self._last_t is None else t - self._last_t
         if fused is not None:
-            dt = 0.0 if self._last_t is None else t - self._last_t
             alpha = 1.0 if self.smooth_s <= 0 else 1 - math.exp(-dt / self.smooth_s)
             if self.smoothed is None or t - self._last_good_t > self.hold_s:
                 self.smoothed = fused                                       # first value, or back after a long gap
@@ -92,8 +104,12 @@ class Fusion:
 
         # 3 + 4. hysteresis and persistence ------------------------------------------------------------
         pending = 0.0
-        if fused is None:                                                  # unreliable: no guess, no timers
-            self._above_since = None
+        if fused is None:                                                  # unreliable: no guess
+            if self._above_since is not None:
+                if t - self._last_good_t > self.hold_s:
+                    self._above_since = None                               # long outage: start counting again
+                else:
+                    self._above_since += dt                                # short outage: the timer just pauses
         else:
             s = self.smoothed
             if self.drowsy:
@@ -137,6 +153,8 @@ class Fusion:
         ignored = [f"{n} {b['status']}" for n, b in branches.items() if b["status"] != "ok"]
         if ignored:
             text += f"; ignored: {', '.join(ignored)}"
+        if self._vetoed:
+            text += f"; microsleep vetoed, {', '.join(self._vetoed)} sees open eyes"
         if pending > 0 and level != DROWSY:
             text += f"; above {self.drowsy_on} for {pending:.1f}/{self.persist_s:.0f} s"
         return text
