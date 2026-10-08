@@ -13,3 +13,7 @@ onnxruntime==1.30.0        # runs the eye model in the notebook
 transformers==5.19.0       # only for the ViT candidate in the model comparison
 pandas==3.0.6
 pytest==9.1.1
+pyserial==3.5          # live sensor over a serial port (EOG_Classifier.ipynb)
+pylsl==1.18.5          # live sensor over Lab Streaming Layer
+pyedflib==0.1.42        # reads the EDF recordings of the DD-Database
+scikit-learn==1.9.1    # trains the EOG classifier
