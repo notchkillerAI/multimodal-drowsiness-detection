@@ -6,3 +6,10 @@ scipy==1.18.1
 ipykernel==7.4.0
 nbformat==5.11.1
 nbconvert==7.17.1
+torch==2.14.1              # only needed to train / compare eye models (train_eye_model.py)
+torchvision==0.29.1
+onnx==1.23.2
+onnxruntime==1.30.0        # runs the eye model in the notebook
+transformers==5.19.0       # only for the ViT candidate in the model comparison
+pandas==3.0.6
+pytest==9.1.1

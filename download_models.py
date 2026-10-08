@@ -9,6 +9,10 @@ FILES = {
     # dlib 68-point landmark model (used by EAR_Detection.ipynb)
     "shape_predictor_68_face_landmarks.dat": (
         "https://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2", True),
+    # YuNet face detector with 5 points (eye centres), MIT licence (used by DL_classifier.ipynb)
+    "models/face_detection_yunet_2023mar.onnx": (
+        "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/"
+        "face_detection_yunet_2023mar.onnx", False),
 }
 
 os.makedirs("models", exist_ok=True)
