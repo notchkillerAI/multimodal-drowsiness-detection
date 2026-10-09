@@ -3,6 +3,7 @@
     pytest -m slow
 
 The cells that need a laptop camera or a sensor are skipped by replacing them; they are checked by hand."""
+
 import os
 
 import nbformat
