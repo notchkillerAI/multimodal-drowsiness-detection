@@ -11,6 +11,8 @@ from collections import deque
 import numpy as np
 from scipy import signal
 
+from drowsiness.common.util import clip01
+
 CALIBRATE_S = 30       # the detector learns the person's noise level
 BASELINE_S = 300       # then 5 minutes of the person's normal (alert) eye activity are measured ...
 WINDOW_S = 120         # ... and every 120 s window is compared with that baseline
@@ -18,10 +20,6 @@ FEATURES = ["rate", "width", "share", "ivcv"]      # events per minute, mean eve
 
 
 MIN_CONF = 0.3            # below this a sample counts as UNKNOWN, not OPEN / CLOSED
-
-
-def clip01(x):
-    return float(np.clip(x, 0.0, 1.0))
 
 
 class StreamFilter:

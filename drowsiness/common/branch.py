@@ -16,10 +16,13 @@ from drowsiness.common.windowing import channel_output
 
 class Branch:
     name = "branch"
+    history_keys = ()          # extra per-frame values of a video branch that runners log (e.g. "ear")
 
     def __init__(self):
         self._lock = threading.Lock()
         self._latest = None
+        self.last = None       # newest per-frame result of a video branch (state, confidence, face_box, ...), for the display
+        self.last_box = None   # the last face box that was found: the alert is drawn there when the face is lost
 
     def start(self):
         pass

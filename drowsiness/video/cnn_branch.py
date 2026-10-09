@@ -1,7 +1,10 @@
 """CNN branch: face + eye centres (YuNet) -> two eye crops -> MobileNetV3 eye-state model -> window statistics.
-Same code as DL_classifier.ipynb, wrapped in the common Branch interface for fusion.
-Does not use the EAR branch's detector or landmarks, so the two do not fail together."""
+Wrapped in the common Branch interface, so fusion and the notebooks use the same code.
+It does not use the EAR branch's detector or landmarks, so the two do not fail together.
+
+    python -m drowsiness.video.cnn_branch --source 0        # laptop camera (a video file path works too)"""
 import os
+import time
 from collections import deque
 
 import cv2
@@ -9,6 +12,8 @@ import numpy as np
 import onnxruntime as ort
 
 from drowsiness.common.branch import WindowedBranch
+from drowsiness.common.util import clip01
+from drowsiness.video.hud import STATE_COLOUR, font_scale
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 FACE_MODEL = os.path.join(ROOT, "models/face_detection_yunet_2023mar.onnx")
@@ -18,10 +23,6 @@ CROP_SCALE = 0.65       # eye crop side = this x distance between the eyes
 MIN_CONF = 0.3          # below this a frame is "UNKNOWN"
 CLOSED_ON = 0.5         # p(closed) above this: CLOSED
 CLOSED_OFF = 0.4        # an already CLOSED eye must fall below this to be OPEN again
-
-
-def clip01(x):
-    return float(np.clip(x, 0.0, 1.0))
 
 
 def crop_eye(frame, centre, side):
@@ -45,16 +46,16 @@ def input_confidence(face, eyes, crops, inside, p, prev_eyes):
     brightness = np.mean([c.mean() for c in crops])
 
     factors = {
-        "face": clip01((face["score"] - 0.6) / 0.3),
-        "size": clip01((side - 16) / 24),
+        "face": clip01((face["score"] - 0.6) / 0.3),                 # the detector is sure it is a face
+        "size": clip01((side - 16) / 24),                            # 16 px -> 0, 40 px -> 1
         "pose": min(1 - clip01((offset - 0.10) / 0.25), 1 - clip01((tilt - 20) / 30)),
-        "inside": clip01((min(inside) - 0.6) / 0.4),
+        "inside": clip01((min(inside) - 0.6) / 0.4),                 # eye crops inside the image
         "light": min(clip01((brightness - 35) / 35), clip01((240 - brightness) / 30)),
         "agree": 1 - clip01((abs(p[0] - p[1]) - 0.3) / 0.5),         # the two eyes should agree
         "certain": clip01((max(p.mean(), 1 - p.mean()) - 0.5) / 0.2),  # an undecided network is not a verdict
         "stable": 1.0,
     }
-    if prev_eyes is not None:
+    if prev_eyes is not None:                                        # eye shift since last frame, relative to iod
         shift = np.linalg.norm(eyes - prev_eyes, axis=1).mean() / iod
         factors["stable"] = 1 - clip01((shift - 0.05) / 0.25)
     return min(factors.values()), factors
@@ -62,10 +63,11 @@ def input_confidence(face, eyes, crops, inside, p, prev_eyes):
 
 class CnnBranch(WindowedBranch):
     name = "cnn"
+    history_keys = ("p_closed", "ms_face", "ms_cnn")
 
     def __init__(self, window_s=30.0):
         super().__init__(window_s)
-        self._recent, self._last_state, self._prev_eyes, self._res = deque(maxlen=3), "UNKNOWN", None, None
+        self._recent, self._last_state, self._prev_eyes = deque(maxlen=3), "UNKNOWN", None
 
     def start(self):
         self.face_detector = cv2.FaceDetectorYN.create(FACE_MODEL, "", (320, 320), 0.6, 0.3, 5000)
@@ -73,7 +75,7 @@ class CnnBranch(WindowedBranch):
         self.eye_size = self.eye_session.get_inputs()[0].shape[-1]
 
     def update(self, t, frame=None):
-        res = self._process(frame)
+        res = self.analyse(frame)
         self._prev_eyes = res["eyes"]
         if res["state"] != "UNKNOWN":
             self._recent.append(res["p_closed"])             # 3-frame average + lower threshold to re-open
@@ -83,11 +85,15 @@ class CnnBranch(WindowedBranch):
         else:
             self._recent.clear()
         self._last_state = res["state"]
-        self._res = res
+        res["headline"] = (f"{res['state']}   p(closed) {res['p_closed']:.2f}" if not np.isnan(res["p_closed"])
+                           else "NO FACE FOUND - confidence 0, no verdict")
+        self.last = res
+        self.last_box = res["face_box"] if res["face_box"] is not None else self.last_box
         self._push(t, res["state"], res["confidence"])
         return self.latest()
 
     def _detect_face(self, frame):
+        """Largest face as a dict (box, score, eyes, nose in full-frame pixels), or None."""
         scale = min(1.0, DETECT_WIDTH / frame.shape[1])
         small = cv2.resize(frame, None, fx=scale, fy=scale) if scale < 1 else frame
         self.face_detector.setInputSize((small.shape[1], small.shape[0]))
@@ -96,38 +102,57 @@ class CnnBranch(WindowedBranch):
             return None
         f = max(faces, key=lambda r: r[2] * r[3]).copy()
         f[:14] /= scale
+        # YuNet order: box(4), right eye, left eye, nose, mouth corners (x, y each), score
         return {"box": f[:4].astype(int), "score": float(f[14]), "eyes": np.array([f[4:6], f[6:8]]), "nose": f[8:10]}
 
     def _predict_closed(self, crops):
+        """Probability that each eye crop is closed (one batch for both eyes)."""
         batch = np.stack([cv2.resize(cv2.cvtColor(c, cv2.COLOR_BGR2GRAY), (self.eye_size, self.eye_size),
                                      interpolation=cv2.INTER_AREA) for c in crops]).astype(np.float32)[:, None] / 255
         return self.eye_session.run(None, {"eye": batch})[0]
 
-    def _process(self, frame):
-        res = dict(face=None, eyes=None, side=0.0, p_closed=np.nan, state="UNKNOWN", confidence=0.0, factors={})
+    def analyse(self, frame):
+        """One BGR frame -> face, eye crops, p(closed), state and confidence. Never raises on a missing face.
+        The state here is the raw verdict of this one frame; update() makes it steadier over frames."""
+        res = {"face": None, "face_box": None, "eyes": None, "side": 0.0, "p_left": np.nan, "p_right": np.nan, "p_closed": np.nan,
+               "state": "UNKNOWN", "confidence": 0.0, "factors": {}, "ms_face": 0.0, "ms_cnn": 0.0, "notice": "", "headline": ""}
+        t0 = time.perf_counter()
         face = self._detect_face(frame)
+        res["ms_face"] = 1000 * (time.perf_counter() - t0)
         if face is None:
             return res
         iod = np.linalg.norm(face["eyes"][0] - face["eyes"][1])
-        res.update(face=face, eyes=face["eyes"], side=CROP_SCALE * iod)
+        res.update(face=face, face_box=tuple(face["box"]), eyes=face["eyes"], side=CROP_SCALE * iod)
 
         cropped = [crop_eye(frame, c, res["side"]) for c in face["eyes"]]
         if iod < 8 or any(crop is None for crop, _ in cropped):
+            res["notice"] = "EYES NOT CLEARLY VISIBLE - low confidence, no verdict"
             return res                                        # face found but eyes unusable -> UNKNOWN
         crops, inside = [c for c, _ in cropped], [i for _, i in cropped]
 
+        t0 = time.perf_counter()
         p = self._predict_closed(crops)
+        res["ms_cnn"] = 1000 * (time.perf_counter() - t0)
         res["confidence"], res["factors"] = input_confidence(face, face["eyes"], crops, inside, p, self._prev_eyes)
-        res["p_closed"] = float(p.mean())
+        res["p_right"], res["p_left"], res["p_closed"] = float(p[0]), float(p[1]), float(p.mean())
         if res["confidence"] >= MIN_CONF:
             res["state"] = "CLOSED" if res["p_closed"] > CLOSED_ON else "OPEN"
+        else:
+            res["notice"] = "EYES NOT CLEARLY VISIBLE - low confidence, no verdict"
         return res
 
     def draw(self, frame):
-        if self._res and self._res["face"] is not None:
-            colour = {"OPEN": (0, 200, 0), "CLOSED": (0, 0, 255), "UNKNOWN": (0, 165, 255)}[self._res["state"]]
-            x, y, w, h = self._res["face"]["box"]
-            cv2.rectangle(frame, (x, y), (x + w, y + h), colour, 2)
-            half = int(self._res["side"] / 2)
-            for cx, cy in self._res["eyes"].astype(int):
-                cv2.rectangle(frame, (cx - half, cy - half), (cx + half, cy + half), colour, 2)
+        res = self.last
+        if res and res["face"] is not None:
+            colour, font = STATE_COLOUR[res["state"]], font_scale(frame)
+            thick, half = max(2, int(font * 2.5)), int(res["side"] / 2)
+            for centre, p in zip(res["eyes"], (res["p_right"], res["p_left"])):
+                cx, cy = int(centre[0]), int(centre[1])
+                cv2.rectangle(frame, (cx - half, cy - half), (cx + half, cy + half), colour, thick)
+                if not np.isnan(p):
+                    cv2.putText(frame, f"{p:.2f}", (cx - half, cy - half - 6), cv2.FONT_HERSHEY_SIMPLEX, font * 0.7, colour, thick)
+
+
+if __name__ == "__main__":
+    from drowsiness.video.runner import cli
+    cli(CnnBranch, __doc__.splitlines()[0])
