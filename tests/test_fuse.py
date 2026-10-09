@@ -21,15 +21,15 @@ def test_weighted_vote_uses_trust_and_confidence():
     assert abs(both["fused_score"] - 0.5) < 1e-9
     f = Fusion(trust={"ear": 0.25, "cnn": 0.25}, smooth_s=0)
     weak_ear = f.step(0.0, {"ear": out(0.8, conf=0.5), "cnn": out(0.2)})
-    assert abs(weak_ear["fused_score"] - 0.4) < 1e-9          # less trusted EAR pulls the vote towards the CNN
+    assert abs(weak_ear["fused_score"] - 0.4) < 1e-9  # less trusted EAR pulls the vote towards the CNN
 
 
 def test_switched_off_and_missing_branches_are_ignored():
     f = Fusion(trust={"ear": 0.25, "cnn": 0.25, "eog": 0.3}, smooth_s=0)
-    only_cnn = f.step(0.0, {"cnn": out(0.7)})                 # ear and eog are off: not in outputs
+    only_cnn = f.step(0.0, {"cnn": out(0.7)})  # ear and eog are off: not in outputs
     assert abs(only_cnn["fused_score"] - 0.7) < 1e-9
     f = Fusion(trust={"ear": 0.25, "cnn": 0.25, "eog": 0.3}, smooth_s=0)
-    with_empty_eog = f.step(0.0, {"cnn": out(0.7), "eog": None})   # eog on but not built yet
+    with_empty_eog = f.step(0.0, {"cnn": out(0.7), "eog": None})  # eog on but not built yet
     assert abs(with_empty_eog["fused_score"] - 0.7) < 1e-9 and with_empty_eog["branches"]["eog"]["status"] == "no data"
 
 
@@ -61,10 +61,10 @@ def test_persistence_short_spike_does_not_alert():
 def test_persistence_then_alert_and_hysteresis_clear():
     f = Fusion(trust={"ear": 1.0}, smooth_s=0, persist_s=3.0)
     up = run(f, 4, {"ear": 0.9})
-    assert up[0] != DROWSY and up[-1] == DROWSY               # not at once, but after ~3 s
-    middle = run(f, 2, {"ear": 0.5}, start=4)                 # between 0.4 and 0.6: stays DROWSY (hysteresis)
+    assert up[0] != DROWSY and up[-1] == DROWSY  # not at once, but after ~3 s
+    middle = run(f, 2, {"ear": 0.5}, start=4)  # between 0.4 and 0.6: stays DROWSY (hysteresis)
     assert set(middle) == {DROWSY}
-    low = run(f, 1, {"ear": 0.3}, start=6)                    # below 0.4: clears
+    low = run(f, 1, {"ear": 0.3}, start=6)  # below 0.4: clears
     assert low[-1] != DROWSY
 
 
@@ -72,7 +72,7 @@ def test_graded_levels_without_flicker():
     f = Fusion(trust={"ear": 1.0}, smooth_s=0)
     assert run(f, 1, {"ear": 0.1})[-1] == ALERT
     assert run(f, 1, {"ear": 0.5}, start=1)[-1] == EARLY_WARNING
-    noisy = run(f, 3, {"ear": 0.42}, start=2)                 # hovering just above 0.4 must not chatter
+    noisy = run(f, 3, {"ear": 0.42}, start=2)  # hovering just above 0.4 must not chatter
     assert set(noisy) == {EARLY_WARNING}
 
 
@@ -91,7 +91,7 @@ def test_microsleep_ignores_low_confidence_branch():
 def test_microsleep_needs_a_confident_branch():
     f = Fusion(trust={"ear": 0.25, "cnn": 0.25}, smooth_s=0)
     res = f.step(0.0, {"ear": out(0.1, conf=0.0), "cnn": out(0.6, conf=0.4, closure=3.0)})
-    assert res["level"] != MICROSLEEP                        # 0.4 is not confident enough for an immediate alarm
+    assert res["level"] != MICROSLEEP  # 0.4 is not confident enough for an immediate alarm
 
 
 def test_confident_branch_seeing_open_eyes_vetoes_microsleep():
@@ -108,11 +108,11 @@ def test_both_branches_agreeing_still_gives_microsleep():
 
 def test_short_outage_pauses_the_persistence_timer_but_a_long_one_resets_it():
     f = Fusion(trust={"ear": 1.0}, smooth_s=0, persist_s=3.0, hold_s=5.0)
-    run(f, 2, {"ear": 0.9})                                   # 2 s above 0.6
-    run(f, 2, {"ear": 0.9}, conf=0.0, start=2)                # face lost for 2 s: no verdict, timer paused
-    after = run(f, 1.5, {"ear": 0.9}, start=4)                # 1 s more needed -> DROWSY within 1.5 s
+    run(f, 2, {"ear": 0.9})  # 2 s above 0.6
+    run(f, 2, {"ear": 0.9}, conf=0.0, start=2)  # face lost for 2 s: no verdict, timer paused
+    after = run(f, 1.5, {"ear": 0.9}, start=4)  # 1 s more needed -> DROWSY within 1.5 s
     assert DROWSY in after
     f2 = Fusion(trust={"ear": 1.0}, smooth_s=0, persist_s=3.0, hold_s=5.0)
     run(f2, 2, {"ear": 0.9})
-    run(f2, 8, {"ear": 0.9}, conf=0.0, start=2)               # 8 s outage: start again
+    run(f2, 8, {"ear": 0.9}, conf=0.0, start=2)  # 8 s outage: start again
     assert DROWSY not in run(f2, 1.5, {"ear": 0.9}, start=10)

@@ -2,6 +2,7 @@
 Wrapped in the common Branch interface, so fusion and the notebooks use the same code.
 
     python -m drowsiness.video.ear_branch --source 0        # laptop camera (a video file path works too)"""
+
 import os
 from collections import deque
 
@@ -16,9 +17,9 @@ from drowsiness.video.hud import font_scale
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LANDMARK_MODEL = os.path.join(ROOT, "shape_predictor_68_face_landmarks.dat")
 YUNET_MODEL = os.path.join(ROOT, "models/face_detection_yunet_2023mar.onnx")
-DETECT_WIDTH = 640            # big frames are shrunk to this width for YuNet only
-DEFAULT_THRESHOLD = 0.20      # fallback when no calibration is possible
-MIN_CONF = 0.3                # below this a frame is "UNKNOWN", not OPEN/CLOSED
+DETECT_WIDTH = 640  # big frames are shrunk to this width for YuNet only
+DEFAULT_THRESHOLD = 0.20  # fallback when no calibration is possible
+MIN_CONF = 0.3  # below this a frame is "UNKNOWN", not OPEN/CLOSED
 
 
 def calculate_ear(eye):
@@ -40,10 +41,10 @@ def eye_confidence(gray, left_eye, right_eye, prev_eyes=None, face_box=None, ear
     eyes = np.vstack([left_eye, right_eye]).astype(float)
     width_l, width_r = distance(left_eye[0], left_eye[3]), distance(right_eye[0], right_eye[3])
 
-    size = clip01(((width_l + width_r) / 2 - 10) / 15)                       # eyes wide enough to measure (10 px -> 0, 25 px -> 1)
-    pose = clip01((min(width_l, width_r) / max(width_l, width_r, 1e-6) - 0.5) / 0.3)   # head turn: far eye narrower
+    size = clip01(((width_l + width_r) / 2 - 10) / 15)  # eyes wide enough to measure (10 px -> 0, 25 px -> 1)
+    pose = clip01((min(width_l, width_r) / max(width_l, width_r, 1e-6) - 0.5) / 0.3)  # head turn: far eye narrower
     inside_share = np.mean((eyes[:, 0] >= 0) & (eyes[:, 0] < width) & (eyes[:, 1] >= 0) & (eyes[:, 1] < height))
-    inside = clip01((inside_share - 0.5) / 0.5)                              # eye points inside the image
+    inside = clip01((inside_share - 0.5) / 0.5)  # eye points inside the image
 
     x0, y0 = np.maximum(eyes.min(axis=0).astype(int), 0)
     x1, y1 = eyes.max(axis=0).astype(int) + 1
@@ -51,7 +52,7 @@ def eye_confidence(gray, left_eye, right_eye, prev_eyes=None, face_box=None, ear
     light = 0.0 if region.size == 0 else min(clip01((region.mean() - 35) / 35), clip01((240 - region.mean()) / 30))
 
     stable = 1.0
-    if prev_eyes is not None:                                                # landmark jumps between frames
+    if prev_eyes is not None:  # landmark jumps between frames
         shift = np.linalg.norm(eyes - prev_eyes, axis=1).mean() / max(distance(left_eye.mean(0), right_eye.mean(0)), 1e-6)
         stable = 1.0 - clip01((shift - 0.05) / 0.25)
 
@@ -98,7 +99,7 @@ class EarBranch(WindowedBranch):
         if res["state"] != "UNKNOWN":
             if not self._calibrated:
                 self._open_ears.append(res["ear"])
-            self._recent.append(res["ear"])                  # 3-frame average + 15 % margin to re-open: no flicker
+            self._recent.append(res["ear"])  # 3-frame average + 15 % margin to re-open: no flicker
             res["ear"] = float(np.mean(self._recent))
             margin = 1.15 if self._last_state == "CLOSED" else 1.0
             res["state"] = "CLOSED" if res["ear"] < self.threshold * margin else "OPEN"
@@ -106,11 +107,14 @@ class EarBranch(WindowedBranch):
             self._recent.clear()
         self._last_state = res["state"]
 
-        if not self._calibrated:                             # no verdict and no confidence while calibrating
+        if not self._calibrated:  # no verdict and no confidence while calibrating
             res["state"], res["confidence"] = "UNKNOWN", 0.0
             res["notice"] = f"CALIBRATING {max(0.0, self.calibrate_s - t):.0f}s: eyes open, look at the camera"
-        res["headline"] = (f"{res['state']}  EAR {res['ear']:.2f} (thr {self.threshold:.2f})" if res["face_box"] is not None
-                           else "NO FACE FOUND - confidence 0, no verdict")
+        res["headline"] = (
+            f"{res['state']}  EAR {res['ear']:.2f} (thr {self.threshold:.2f})"
+            if res["face_box"] is not None
+            else "NO FACE FOUND - confidence 0, no verdict"
+        )
         self.last = res
         self.last_box = res["face_box"] or self.last_box
         self._push(t, res["state"], res["confidence"])
@@ -144,8 +148,18 @@ class EarBranch(WindowedBranch):
     def analyse(self, frame):
         """One BGR frame -> face box, eye points, EAR, state and confidence. Never raises on a missing face.
         The state here is the raw verdict of this one frame; update() makes it steadier over frames."""
-        res = {"face_box": None, "eyes": None, "left_ear": np.nan, "right_ear": np.nan, "ear": np.nan, "state": "UNKNOWN",
-               "confidence": 0.0, "factors": {}, "notice": "", "headline": ""}
+        res = {
+            "face_box": None,
+            "eyes": None,
+            "left_ear": np.nan,
+            "right_ear": np.nan,
+            "ear": np.nan,
+            "state": "UNKNOWN",
+            "confidence": 0.0,
+            "factors": {},
+            "notice": "",
+            "headline": "",
+        }
         box, points = self.locate(frame)
         if box is None:
             return res
@@ -156,8 +170,16 @@ class EarBranch(WindowedBranch):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         confidence, factors = eye_confidence(gray, left_eye, right_eye, self._prev_eyes, box, (left_ear, right_ear))
         state = "UNKNOWN" if confidence < MIN_CONF else ("CLOSED" if ear < self.threshold else "OPEN")
-        res.update(face_box=box, eyes=np.vstack([left_eye, right_eye]).astype(float), left_ear=left_ear, right_ear=right_ear,
-                   ear=ear, state=state, confidence=confidence, factors=factors)
+        res.update(
+            face_box=box,
+            eyes=np.vstack([left_eye, right_eye]).astype(float),
+            left_ear=left_ear,
+            right_ear=right_ear,
+            ear=ear,
+            state=state,
+            confidence=confidence,
+            factors=factors,
+        )
         if state == "UNKNOWN":
             res["notice"] = "EYES NOT CLEARLY VISIBLE - low confidence, no verdict"
         return res
@@ -170,4 +192,5 @@ class EarBranch(WindowedBranch):
 
 if __name__ == "__main__":
     from drowsiness.video.runner import cli
+
     cli(EarBranch, __doc__.splitlines()[0], extra_args=[("--calibrate-s", float, 10.0, "seconds of open eyes to learn your threshold")])

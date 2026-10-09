@@ -1,0 +1,6 @@
+# Only to train / compare eye-state models (train_eye_model.py)
+-r requirements.txt
+torch==2.14.1
+torchvision==0.29.1
+onnx==1.23.2
+transformers==5.19.0       # only for the ViT candidate in the model comparison

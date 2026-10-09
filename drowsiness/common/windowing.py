@@ -6,6 +6,7 @@ Input is a stream of per-frame results:
     confs  : per-frame confidence in [0, 1]
 The rules are the same as in EAR_Detection.ipynb, so every branch reports the same way.
 """
+
 import numpy as np
 
 # Closure-duration levels (seconds). Literature values, engineering choices where noted:
@@ -14,11 +15,11 @@ import numpy as np
 #  - behavioural microsleeps last about 0.5-15 s (Poudel et al.; Innes 2013; Jonmohamadi 2016)
 #  - a closure of 1 s counts as tiredness in published CNN driver systems, an alarm at 2 s (arXiv 2001.05137)
 # The 1 s and 2 s cut-offs are engineering choices inside the microsleep range, not universal standards.
-BLINK_MAX_DURATION = 0.4          # up to this: normal blink
-DROWSY_CLOSURE_DURATION = 1.0     # from this: DROWSY (between 0.4 and 1.0 s: slow blink)
-MICROSLEEP_DURATION = 2.0         # from this: MICROSLEEP
-MIN_CLOSURE_DURATION = 0.06       # shorter than ~2 frames is noise, not a blink
-MAX_GAP = 0.5                     # tracking loss up to this long, between closed frames, is still the same closure
+BLINK_MAX_DURATION = 0.4  # up to this: normal blink
+DROWSY_CLOSURE_DURATION = 1.0  # from this: DROWSY (between 0.4 and 1.0 s: slow blink)
+MICROSLEEP_DURATION = 2.0  # from this: MICROSLEEP
+MIN_CLOSURE_DURATION = 0.06  # shorter than ~2 frames is noise, not a blink
+MAX_GAP = 0.5  # tracking loss up to this long, between closed frames, is still the same closure
 
 
 def fill_short_gaps(times, states, max_gap=MAX_GAP):
@@ -57,7 +58,7 @@ def find_closures(times, states):
             closures.append({"start_time": start, "end_time": t, "duration": t - start})
             start = None
 
-    if start is not None:                       # still closed at the end
+    if start is not None:  # still closed at the end
         end = times[-1] + dt
         closures.append({"start_time": start, "end_time": end, "duration": end - start})
 
@@ -82,9 +83,9 @@ def calculate_drowsiness_score(perclos, longest_closure, blink_frequency, observ
     so one normal blink cannot move it."""
     score = 0.0
     if not np.isnan(perclos):
-        score += 0.50 * min(perclos / 0.30, 1.0)                    # PERCLOS >= 30 % -> full
+        score += 0.50 * min(perclos / 0.30, 1.0)  # PERCLOS >= 30 % -> full
     score += 0.35 * min(longest_closure / DROWSY_CLOSURE_DURATION, 1.0)
-    if observed_seconds >= 20 and blink_frequency < 5:              # blink rate needs a long window
+    if observed_seconds >= 20 and blink_frequency < 5:  # blink rate needs a long window
         score += 0.15
     return min(score, 1.0)
 

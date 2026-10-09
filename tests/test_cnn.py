@@ -7,9 +7,9 @@ def test_crop_reports_how_much_is_inside_the_frame():
     frame = np.zeros((100, 100, 3), np.uint8)
     crop, inside = crop_eye(frame, (50, 50), 20)
     assert crop.shape[:2] == (20, 20) and inside == 1.0
-    crop, inside = crop_eye(frame, (0, 50), 20)                      # half of the square is outside
+    crop, inside = crop_eye(frame, (0, 50), 20)  # half of the square is outside
     assert inside == 0.5 and crop.shape[1] == 10
-    assert crop_eye(frame, (-50, 50), 20) == (None, 0.0)             # completely outside
+    assert crop_eye(frame, (-50, 50), 20) == (None, 0.0)  # completely outside
 
 
 def face(score=0.95, nose_x=100.0):
@@ -27,9 +27,9 @@ def test_clear_open_eyes_are_trusted():
 
 
 def test_each_problem_lowers_confidence():
-    assert confidence(brightness=5)[0] < 0.1                          # dark
-    assert confidence(nose_x=60.0)[0] < 0.1                           # head turned: nose far from the eye centre
-    assert confidence(score=0.6)[0] < 0.1                             # the detector is unsure it is a face
-    assert confidence(p=(0.05, 0.95))[0] < 0.1                        # the two eyes disagree
-    assert confidence(p=(0.5, 0.5))[0] < 0.1                          # the network is undecided
-    assert confidence(prev=np.array([[20.0, 100.0], [80.0, 100.0]]))[0] < 0.1    # eyes jumped between frames
+    assert confidence(brightness=5)[0] < 0.1  # dark
+    assert confidence(nose_x=60.0)[0] < 0.1  # head turned: nose far from the eye centre
+    assert confidence(score=0.6)[0] < 0.1  # the detector is unsure it is a face
+    assert confidence(p=(0.05, 0.95))[0] < 0.1  # the two eyes disagree
+    assert confidence(p=(0.5, 0.5))[0] < 0.1  # the network is undecided
+    assert confidence(prev=np.array([[20.0, 100.0], [80.0, 100.0]]))[0] < 0.1  # eyes jumped between frames

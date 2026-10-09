@@ -2,10 +2,11 @@
 
 A branch only has to provide `last` (its newest per-frame result), `latest()` (its window output) and `draw(frame)`
 (its own marks, such as eye points); this module draws the rest, so all branches look and behave the same."""
+
 import cv2
 import numpy as np
 
-STATE_COLOUR = {"OPEN": (0, 200, 0), "CLOSED": (0, 0, 255), "UNKNOWN": (0, 165, 255)}   # BGR: green, red, orange
+STATE_COLOUR = {"OPEN": (0, 200, 0), "CLOSED": (0, 0, 255), "UNKNOWN": (0, 165, 255)}  # BGR: green, red, orange
 ALERT_LEVELS = ("DROWSY", "MICROSLEEP")
 
 
@@ -50,9 +51,11 @@ def draw_hud(frame, branch, note=""):
     lines = [res["headline"], f"CONFIDENCE frame {res['confidence']:.2f}" + (f"  channel {out['confidence']:.2f}" if out else "")]
     if out is not None:
         r = out["raw"]
-        lines += [f"PERCLOS {r['perclos']:.2f}  blinks {r['blink_count']} ({r['blink_rate_per_min']:.0f}/min)",
-                  f"closed now {r['current_closure_s']:.1f}s  longest {r['longest_closure_s']:.1f}s",
-                  f"SCORE {out['score']:.2f}"]
+        lines += [
+            f"PERCLOS {r['perclos']:.2f}  blinks {r['blink_count']} ({r['blink_rate_per_min']:.0f}/min)",
+            f"closed now {r['current_closure_s']:.1f}s  longest {r['longest_closure_s']:.1f}s",
+            f"SCORE {out['score']:.2f}",
+        ]
     if res["notice"]:
         lines.append(res["notice"])
     if res["factors"]:

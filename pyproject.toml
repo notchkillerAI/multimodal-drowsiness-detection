@@ -1,0 +1,19 @@
+[tool.ruff]
+line-length = 140
+target-version = "py312"
+extend-exclude = [".venv", "data", "models", "runs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E741", "B905"]   # short names such as l / r (left / right eye) are clear here; zip() always gets equal lengths
+
+[tool.ruff.lint.per-file-ignores]
+"*.ipynb" = ["E501", "E402", "B007"]      # notebooks may have long explanatory lines and imports after a setup step
+
+[tool.ruff.lint.isort]
+known-first-party = ["drowsiness"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: executes whole notebooks (several minutes); run with  pytest -m slow"]
+addopts = "-m 'not slow'"

@@ -1,4 +1,5 @@
 """Small numeric helpers shared by all branches."""
+
 import numpy as np
 
 

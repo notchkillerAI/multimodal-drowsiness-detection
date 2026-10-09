@@ -11,14 +11,22 @@ from drowsiness.video.runner import run_video, summary
 
 class BrightnessBranch(WindowedBranch):
     """A stand-in branch: bright frame = eyes open, dark frame = eyes closed. No models needed."""
+
     name = "fake"
     history_keys = ("brightness",)
 
     def update(self, t, frame=None):
         brightness = float(frame.mean())
         state = "OPEN" if brightness > 50 else "CLOSED"
-        self.last = {"state": state, "confidence": 1.0, "face_box": (10, 10, 40, 30), "factors": {"light": 1.0},
-                     "notice": "", "headline": f"{state} {brightness:.0f}", "brightness": brightness}
+        self.last = {
+            "state": state,
+            "confidence": 1.0,
+            "face_box": (10, 10, 40, 30),
+            "factors": {"light": 1.0},
+            "notice": "",
+            "headline": f"{state} {brightness:.0f}",
+            "brightness": brightness,
+        }
         self.last_box = self.last["face_box"]
         self._push(t, state, 1.0)
         return self.latest()
@@ -28,7 +36,7 @@ class BrightnessBranch(WindowedBranch):
 def video(tmp_path):
     path = str(tmp_path / "v.mp4")
     writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"mp4v"), 30, (160, 120))
-    for i in range(150):                                              # 5 s: open, closed from 1.0 s to 3.5 s, open
+    for i in range(150):  # 5 s: open, closed from 1.0 s to 3.5 s, open
         writer.write(np.full((120, 160, 3), 20 if 30 <= i < 105 else 200, np.uint8))
     writer.release()
     return path
@@ -48,12 +56,12 @@ def test_run_video_logs_every_frame_and_finds_the_closure(video, tmp_path):
 
 def test_hud_draws_the_big_red_alert_for_a_long_closure(video):
     branch = BrightnessBranch()
-    hist = run_video(branch, video, show=None, max_seconds=3.3)       # closed since 1.0 s: DROWSY by now
+    hist = run_video(branch, video, show=None, max_seconds=3.3)  # closed since 1.0 s: DROWSY by now
     assert hist["output"]["raw"]["closure_level"] in ("DROWSY", "MICROSLEEP")
     frame = np.full((480, 640, 3), 90, np.uint8)
     draw_hud(frame, branch)
     red = (frame[..., 2] == 255) & (frame[..., 0] == 0) & (frame[..., 1] == 0)
-    assert red.sum() > 500                                            # the red alert box
+    assert red.sum() > 500  # the red alert box
 
 
 def test_hud_without_a_result_does_nothing():

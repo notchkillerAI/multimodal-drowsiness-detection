@@ -1,19 +1,13 @@
+# Runtime: everything needed to run the notebooks and the live branches
 numpy==2.5.3
 opencv-python==4.14.0.94   # not 5.x: it dropped cv2.CascadeClassifier
 dlib==20.0.1               # builds from source on Apple Silicon (~3 min, needs cmake)
 matplotlib==3.11.2
 scipy==1.18.1
-ipykernel==7.4.0
-nbformat==5.11.1
-nbconvert==7.17.1
-torch==2.14.1              # only needed to train / compare eye models (train_eye_model.py)
-torchvision==0.29.1
-onnx==1.23.2
-onnxruntime==1.30.0        # runs the eye model in the notebook
-transformers==5.19.0       # only for the ViT candidate in the model comparison
 pandas==3.0.6
-pytest==9.1.1
-pyserial==3.5          # live sensor over a serial port (EOG_Classifier.ipynb)
-pylsl==1.18.5          # live sensor over Lab Streaming Layer
-pyedflib==0.1.42        # reads the EDF recordings of the DD-Database
-scikit-learn==1.9.1    # trains the EOG classifier
+onnxruntime==1.30.0        # runs the eye-state model
+scikit-learn==1.9.1        # trains the EOG classifier (EOG_EDA.ipynb)
+pyedflib==0.1.42           # reads the EDF recordings of the DD-Database
+pyserial==3.5              # live EMG sensor over a serial port
+pylsl==1.18.5              # live EMG sensor over Lab Streaming Layer
+ipykernel==7.4.0

@@ -1,5 +1,6 @@
 import numpy as np
-from drowsiness.common.windowing import (channel_output, closure_level, fill_short_gaps, find_closures)
+
+from drowsiness.common.windowing import channel_output, closure_level, fill_short_gaps, find_closures
 
 T = np.arange(0, 40, 1 / 30)
 
@@ -47,10 +48,10 @@ def test_perclos_ignores_unknown_frames():
 
 def test_confidence_falls_within_half_a_second_when_the_face_is_lost():
     t = np.arange(0, 20, 1 / 30)
-    states = ["OPEN"] * 540 + ["UNKNOWN"] * 60                  # face visible for 18 s, then lost for 2 s
+    states = ["OPEN"] * 540 + ["UNKNOWN"] * 60  # face visible for 18 s, then lost for 2 s
     confs = [1.0] * 540 + [0.0] * 60
-    just_lost = channel_output(t[:555], states[:555], confs[:555], 30)      # 0.5 s after the loss
-    assert just_lost["confidence"] <= 0.1                       # the 30 s mean alone would still say 0.97
+    just_lost = channel_output(t[:555], states[:555], confs[:555], 30)  # 0.5 s after the loss
+    assert just_lost["confidence"] <= 0.1  # the 30 s mean alone would still say 0.97
     assert just_lost["raw"]["window_confidence"] > 0.9
 
 
@@ -58,5 +59,5 @@ def test_confidence_recovers_slowly_after_the_face_returns():
     t = np.arange(0, 20, 1 / 30)
     states = ["UNKNOWN"] * 300 + ["OPEN"] * 300
     confs = [0.0] * 300 + [1.0] * 300
-    soon = channel_output(t[:330], states[:330], confs[:330], 30, conf_window_s=3.0)   # 1 s after the face is back
+    soon = channel_output(t[:330], states[:330], confs[:330], 30, conf_window_s=3.0)  # 1 s after the face is back
     assert soon["confidence"] < 0.5

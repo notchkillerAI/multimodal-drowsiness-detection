@@ -9,6 +9,7 @@ Plug-in contract (nothing else in the pipeline needs to change):
     - confidence drops on a flat signal or heavy motion artefacts
     - keeping "current_closure_s" in raw lets the fusion's microsleep rule use EOG as well
 """
+
 from drowsiness.common.branch import Branch
 
 
@@ -16,4 +17,4 @@ class EogBranch(Branch):
     name = "eog"
 
     def update(self, t, frame=None):
-        return None            # no output yet: fusion treats the branch as "no data" (weight 0)
+        return None  # no output yet: fusion treats the branch as "no data" (weight 0)
