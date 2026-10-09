@@ -131,22 +131,29 @@ class EarBranch(WindowedBranch):
             return None
         return tuple(int(v) for v in max(faces, key=lambda r: r[2] * r[3]))
 
+    def locate(self, frame):
+        """Face box (x, y, w, h) and the 68 landmark points of the largest face, or (None, None)."""
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        box = self._face_box(frame, gray)
+        if box is None:
+            return None, None
+        x, y, w, h = box
+        shape = self.landmarks(gray, dlib.rectangle(int(x), int(y), int(x + w), int(y + h)))
+        return box, np.array([(p.x, p.y) for p in shape.parts()])
+
     def analyse(self, frame):
         """One BGR frame -> face box, eye points, EAR, state and confidence. Never raises on a missing face.
         The state here is the raw verdict of this one frame; update() makes it steadier over frames."""
         res = {"face_box": None, "eyes": None, "left_ear": np.nan, "right_ear": np.nan, "ear": np.nan, "state": "UNKNOWN",
                "confidence": 0.0, "factors": {}, "notice": "", "headline": ""}
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        box = self._face_box(frame, gray)
+        box, points = self.locate(frame)
         if box is None:
             return res
-        x, y, w, h = box
-        shape = self.landmarks(gray, dlib.rectangle(int(x), int(y), int(x + w), int(y + h)))
-        points = np.array([(p.x, p.y) for p in shape.parts()])
         left_eye, right_eye = points[36:42], points[42:48]
 
         left_ear, right_ear = calculate_ear(left_eye), calculate_ear(right_eye)
         ear = (left_ear + right_ear) / 2.0
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         confidence, factors = eye_confidence(gray, left_eye, right_eye, self._prev_eyes, box, (left_ear, right_ear))
         state = "UNKNOWN" if confidence < MIN_CONF else ("CLOSED" if ear < self.threshold else "OPEN")
         res.update(face_box=box, eyes=np.vstack([left_eye, right_eye]).astype(float), left_ear=left_ear, right_ear=right_ear,
