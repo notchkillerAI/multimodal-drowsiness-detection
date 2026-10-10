@@ -60,11 +60,11 @@ def test_persistence_short_spike_does_not_alert():
 
 def test_persistence_then_alert_and_hysteresis_clear():
     f = Fusion(trust={"ear": 1.0}, smooth_s=0, persist_s=3.0)
-    up = run(f, 4, {"ear": 0.9})
+    up = run(f, 4, {"ear": 0.9}, closure=1.2)  # eyes closed for 1.2 s: no microsleep, no recovery
     assert up[0] != DROWSY and up[-1] == DROWSY  # not at once, but after ~3 s
-    middle = run(f, 2, {"ear": 0.5}, start=4)  # between 0.4 and 0.6: stays DROWSY (hysteresis)
+    middle = run(f, 2, {"ear": 0.5}, closure=1.2, start=4)  # between 0.4 and 0.6: stays DROWSY (hysteresis)
     assert set(middle) == {DROWSY}
-    low = run(f, 1, {"ear": 0.3}, start=6)  # below 0.4: clears
+    low = run(f, 1, {"ear": 0.3}, closure=1.2, start=6)  # below 0.4: clears
     assert low[-1] != DROWSY
 
 
@@ -116,3 +116,57 @@ def test_short_outage_pauses_the_persistence_timer_but_a_long_one_resets_it():
     run(f2, 2, {"ear": 0.9})
     run(f2, 8, {"ear": 0.9}, conf=0.0, start=2)  # 8 s outage: start again
     assert DROWSY not in run(f2, 1.5, {"ear": 0.9}, start=10)
+
+
+def recover_run(**options):
+    """Microsleep for 3 s, then open eyes while the branch scores stay high (they remember the last 30 s). Returns (time, level) pairs."""
+    f = Fusion(trust={"ear": 1.0}, smooth_s=0, **options)
+    steps = run_steps(f, 3, 0.9, closure=2.5, start=0) + run_steps(f, 60, 0.9, closure=0.0, start=3)
+    return steps
+
+
+def run_steps(fusion, seconds, score, closure, start, dt=0.1):
+    steps, t = [], start
+    while t < start + seconds:
+        steps.append((t, fusion.step(t, {"ear": out(score, 1.0, t, closure)})["level"]))
+        t += dt
+    return steps
+
+
+def level_at(steps, t):
+    return min(steps, key=lambda s: abs(s[0] - t))[1]
+
+
+def test_alarm_ends_after_the_eyes_are_open_again_then_yellow_then_alert():
+    steps = recover_run(alert_hold_s=2.5, break_s=8.0, suppress_s=30.0)
+    assert level_at(steps, 2.0) == MICROSLEEP
+    assert level_at(steps, 4.0) == DROWSY  # eyes open since 3.0 s: the red message holds for a moment ...
+    assert level_at(steps, 6.0) == EARLY_WARNING  # ... then the yellow "take a break" level (from 5.5 s)
+    assert level_at(steps, 13.0) == EARLY_WARNING
+    assert level_at(steps, 14.5) == ALERT  # yellow lasts 8 s, then it stops
+    # the old high scores must not restart the alarm during the 30 s after the recovery
+    assert all(level == ALERT for t, level in steps if 14 <= t <= 35)
+
+
+def test_new_long_closure_after_recovery_can_alarm_again():
+    f = Fusion(trust={"ear": 1.0}, smooth_s=0, persist_s=3.0)
+    steps = run_steps(f, 3, 0.9, 2.5, 0) + run_steps(f, 12, 0.9, 0.0, 3)  # microsleep, recovered, in the yellow / alert phase
+    assert steps[-1][1] == ALERT
+    again = run_steps(f, 4, 0.9, 1.2, 15)  # a fresh 1.2 s closure: the score rules wake up, persistence applies
+    assert again[-1][1] == DROWSY
+    micro = run_steps(f, 1, 0.9, 2.5, 19)
+    assert micro[0][1] == MICROSLEEP
+
+
+def test_microsleep_during_the_break_is_immediate():
+    f = Fusion(trust={"ear": 1.0}, smooth_s=0)
+    run_steps(f, 3, 0.9, 2.5, 0)
+    run_steps(f, 4, 0.9, 0.0, 3)  # now in the yellow phase
+    assert run_steps(f, 1, 0.9, 2.5, 7)[0][1] == MICROSLEEP
+
+
+def test_alarm_does_not_end_while_the_eyes_cannot_be_seen_open():
+    f = Fusion(trust={"ear": 1.0}, smooth_s=0)
+    run_steps(f, 3, 0.9, 2.5, 0)
+    unseen = [f.step(t / 10, {"ear": out(0.9, 0.35, t / 10, 1.2)})["level"] for t in range(30, 130)]  # eyes still closed 1.2 s
+    assert set(unseen) == {DROWSY}

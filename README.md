@@ -4,6 +4,7 @@ Real-time system that combines several independent "branches" into one drowsines
 `{score, confidence, raw, timestamp}` (score 0 = alert, 1 = drowsy; confidence 0-1 drops when the sensor cannot be trusted),
 and a fusion step combines them with smoothing, hysteresis and persistence into
 **ALERT / EARLY WARNING / DROWSY / MICROSLEEP** (or *sensors unreliable* instead of a guess).
+When the driver wakes up the red alarm ends 2.5 s after the eyes are open again, a yellow "take a break" level follows for 8 s, then ALERT (all three times are settings).
 
 ```
 camera ──► EAR branch  (landmarks, eye aspect ratio) ─┐
