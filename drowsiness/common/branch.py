@@ -49,9 +49,9 @@ class Branch:
 class WindowedBranch(Branch):
     """Branch that turns per-frame states into window statistics (PERCLOS, closures, score)."""
 
-    def __init__(self, window_s=30.0, conf_window_s=3.0):
+    def __init__(self, window_s=30.0, conf_window_s=3.0, closure_window_s=10.0):
         super().__init__()
-        self.window_s, self.conf_window_s = window_s, conf_window_s
+        self.window_s, self.conf_window_s, self.closure_window_s = window_s, conf_window_s, closure_window_s
         self._t, self._state, self._conf = deque(), deque(), deque()
 
     def _push(self, t, state, confidence):
@@ -64,4 +64,8 @@ class WindowedBranch(Branch):
             self._conf.popleft()
         # Fusion needs to know how reliable the branch is *now*: confidence is the mean over the last few seconds,
         # capped by the last half second so that it falls at once when the face or eyes are lost.
-        self._publish(channel_output(self._t, self._state, self._conf, self.window_s, conf_window_s=self.conf_window_s))
+        self._publish(
+            channel_output(
+                self._t, self._state, self._conf, self.window_s, conf_window_s=self.conf_window_s, closure_window_s=self.closure_window_s
+            )
+        )

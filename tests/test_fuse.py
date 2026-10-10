@@ -169,4 +169,45 @@ def test_alarm_does_not_end_while_the_eyes_cannot_be_seen_open():
     f = Fusion(trust={"ear": 1.0}, smooth_s=0)
     run_steps(f, 3, 0.9, 2.5, 0)
     unseen = [f.step(t / 10, {"ear": out(0.9, 0.35, t / 10, 1.2)})["level"] for t in range(30, 130)]  # eyes still closed 1.2 s
-    assert set(unseen) == {DROWSY}
+    assert set(unseen[5:]) == {DROWSY}  # (the first 0.3 s still show the microsleep: a level change needs its minimum dwell time)
+
+
+def test_branches_that_disagree_do_not_make_a_drowsy_verdict_from_their_average():
+    f = Fusion(trust={"ear": 0.25, "cnn": 0.25}, smooth_s=0, persist_s=3.0)
+    levels, last = [], None
+    for i in range(80):  # 8 s: EAR sees open eyes, the CNN a long closure
+        t = i / 10
+        last = f.step(t, {"ear": out(0.1, 0.9, t, 0.0), "cnn": out(0.95, 0.9, t, 1.5)})
+        levels.append(last["level"])
+    assert DROWSY not in levels and MICROSLEEP not in levels  # an average of opposite opinions is no verdict
+    assert last["disagreement"] and "cnn" in last["disagreement"] and "DISAGREE" in last["reason"]
+    assert abs(last["confidence"] - 0.5 * (0.25 * 0.9 + 0.25 * 0.9) / 0.5) < 1e-9  # the fused confidence is halved
+
+
+def test_agreeing_branches_are_not_flagged_and_keep_full_confidence():
+    f = Fusion(trust={"ear": 0.25, "cnn": 0.25}, smooth_s=0)
+    res = f.step(0.0, {"ear": out(0.7, 0.9), "cnn": out(0.8, 0.9)})
+    assert res["disagreement"] is None and abs(res["confidence"] - 0.9) < 1e-9
+
+
+def test_a_branch_that_is_not_confident_does_not_count_as_disagreeing():
+    f = Fusion(trust={"ear": 0.25, "cnn": 0.25}, smooth_s=0)
+    res = f.step(0.0, {"ear": out(0.1, 0.9), "cnn": out(0.95, 0.3, closure=1.5)})  # the CNN is unsure: ignored for this check
+    assert res["disagreement"] is None
+
+
+def test_one_frame_blips_are_not_shown_but_a_microsleep_and_unreliable_sensors_are():
+    f = Fusion(trust={"ear": 1.0}, smooth_s=0, min_dwell_s=0.3)
+    run(f, 1, {"ear": 0.1})
+    blip = f.step(1.0, {"ear": out(0.5, t=1.0)})  # the fused score is in the warning range for a single frame
+    assert blip["raw_level"] == EARLY_WARNING and blip["level"] == ALERT
+    f.step(1.1, {"ear": out(0.1, t=1.1)})
+    assert f.step(1.2, {"ear": out(0.9, conf=0.0, t=1.2)})["level"] == UNRELIABLE  # lost sensors are shown at once
+    assert f.step(1.3, {"ear": out(0.1, t=1.3, closure=2.5)})["level"] == MICROSLEEP  # a microsleep is never delayed
+
+
+def test_a_real_change_is_shown_after_the_dwell_time():
+    f = Fusion(trust={"ear": 1.0}, smooth_s=0, min_dwell_s=0.3)
+    run(f, 1, {"ear": 0.1})
+    levels = [f.step(1 + i / 10, {"ear": out(0.5, t=1 + i / 10)})["level"] for i in range(6)]
+    assert levels[0] == ALERT and levels[-1] == EARLY_WARNING

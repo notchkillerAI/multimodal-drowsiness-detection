@@ -90,14 +90,20 @@ def calculate_drowsiness_score(perclos, longest_closure, blink_frequency, observ
     return min(score, 1.0)
 
 
-def channel_output(times, states, confs, window_s=30.0, conf_window_s=None, recent_s=0.5):
+def channel_output(times, states, confs, window_s=30.0, conf_window_s=None, recent_s=0.5, closure_window_s=10.0):
     """Summarise the last `window_s` seconds into the branch output contract:
     {score, confidence, raw, timestamp}.
 
     Confidence = min(mean frame confidence over `conf_window_s` (default: the whole window),
                      mean frame confidence over the last `recent_s`).
     So it falls within half a second when the face or eyes disappear (the recent part) instead of
-    still claiming the old verdict is reliable, and it recovers slowly (the long part)."""
+    still claiming the old verdict is reliable, and it recovers slowly (the long part).
+
+    Two time scales for the score: PERCLOS uses the whole window (a share of time needs a long window to be reliable,
+    short windows make it less accurate), but the longest-closure term only looks at the last `closure_window_s`
+    seconds, so the score follows what the eyes do now and does not stay high for the whole window after one
+    long closure. (The immediate microsleep alarm does not depend on the score.) `longest_closure_s` in `raw`
+    still reports the longest closure of the whole window."""
     times = np.asarray(times, dtype=float)
     keep = times >= times[-1] - window_s
     t = times[keep]
@@ -111,6 +117,7 @@ def channel_output(times, states, confs, window_s=30.0, conf_window_s=None, rece
     closures_ok = [x for x in closures_all if x["duration"] >= MIN_CLOSURE_DURATION]
     blinks_n = sum(x["duration"] <= BLINK_MAX_DURATION for x in closures_ok)
     longest = max([x["duration"] for x in closures_ok], default=0.0)
+    recent_longest = max([x["duration"] for x in closures_ok if x["end_time"] >= t[-1] - closure_window_s], default=0.0)
 
     long_part = c[t >= t[-1] - (conf_window_s or window_s)].mean()
     recent_part = c[t >= t[-1] - recent_s].mean()
@@ -121,13 +128,14 @@ def channel_output(times, states, confs, window_s=30.0, conf_window_s=None, rece
     blink_rate = blinks_n / observed * 60 if observed > 0 else 0.0
 
     return {
-        "score": calculate_drowsiness_score(perclos, longest, blink_rate, observed * n_known / len(s)),
+        "score": calculate_drowsiness_score(perclos, recent_longest, blink_rate, observed * n_known / len(s)),
         "confidence": float(min(long_part, recent_part)),
         "raw": {
             "eyes_closed": ongoing,
             "current_closure_s": current_closure,
             "closure_level": closure_level(current_closure),
             "longest_closure_s": longest,
+            "recent_longest_closure_s": recent_longest,
             "blink_count": int(blinks_n),
             "blink_rate_per_min": blink_rate,
             "perclos": perclos,

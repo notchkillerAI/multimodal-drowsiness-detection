@@ -61,3 +61,14 @@ def test_confidence_recovers_slowly_after_the_face_returns():
     confs = [0.0] * 300 + [1.0] * 300
     soon = channel_output(t[:330], states[:330], confs[:330], 30, conf_window_s=3.0)  # 1 s after the face is back
     assert soon["confidence"] < 0.5
+
+
+def test_score_follows_the_present_but_perclos_keeps_the_whole_window():
+    t = np.arange(0, 40, 1 / 30)
+    states = ["CLOSED" if 8 < x < 11 else "OPEN" for x in t]  # one 3 s closure at 8-11 s
+    soon = channel_output(t[: int(13 * 30)], states[: int(13 * 30)], [0.9] * int(13 * 30), 30)  # 2 s after it
+    n = int(37.5 * 30)
+    later = channel_output(t[:n], states[:n], [0.9] * n, 30)  # 26 s after it: left the 10 s closure window, still in the 30 s window
+    assert soon["raw"]["recent_longest_closure_s"] > 2.5 and soon["score"] > 0.6
+    assert later["raw"]["recent_longest_closure_s"] == 0.0 and later["raw"]["longest_closure_s"] > 2.5  # still reported for the window
+    assert 0.0 < later["score"] < soon["score"] and later["raw"]["perclos"] > 0.05  # PERCLOS still remembers it

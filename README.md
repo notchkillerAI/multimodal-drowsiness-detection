@@ -56,7 +56,8 @@ Notebooks (pick the `.venv` kernel):
 ```
 drowsiness/
   common/   branch.py (the interface every branch follows), windowing.py (closures, PERCLOS, score, confidence), util.py
-  video/    ear_branch.py, cnn_branch.py, capture.py (camera / file reader), hud.py (display), runner.py (run + log + CLI)
+  video/    ear_branch.py, cnn_branch.py, capture.py (camera / file reader), hud.py (display), runner.py (run + log + CLI),
+            clips.py (record labelled clips of your face and measure the branches on them)
   bio/      eye_events.py (EOG/EMG detector, monitor, sensor sources), synthetic.py, eog_branch.py / eeg_branch.py (placeholders)
   fusion/   fuse.py
 tests/      unit tests; test_notebooks.py runs every notebook (slow)
@@ -66,7 +67,7 @@ tests/      unit tests; test_notebooks.py runs every notebook (slow)
 ## Tests and code style
 
 ```bash
-.venv/bin/python -m pytest              # 49 fast tests
+.venv/bin/python -m pytest              # 64 fast tests
 .venv/bin/python -m pytest -m slow      # also executes all notebooks (about 4 minutes)
 .venv/bin/ruff check . && .venv/bin/ruff format --check .
 ```
@@ -78,7 +79,13 @@ tests/      unit tests; test_notebooks.py runs every notebook (slow)
 * **EOG model**: trained on 7 people of the DD-Database (CC0). On people it has not seen, AUC is **0.65 (±0.06)**, catching 60% of drowsy windows and clearing 67% of alert ones:
   a trend indicator, not an alarm on its own. Labels are the drivers' own button presses (noisy).
 * **EMG sensor path**: tested only on simulated signals and with the loopback of the serial and LSL readers; **not validated on real EMG data**.
-* **Fusion**: damage tests (lights out, camera covered, sunglasses, hand over the eyes) lower the confidence and give *sensors unreliable* instead of a guess; a short ALERT transient (about 0.7 s) remains for the hand-over-eyes case.
+* **Fusion rules** (all unit-tested): confidence-weighted vote, smoothing, hysteresis, persistence, an immediate microsleep rule with a veto by a confident branch that sees open eyes,
+  **disagreement handling** (two confident branches that contradict each other are not averaged into a DROWSY verdict, and the confidence is halved), a 0.3 s minimum dwell so one-frame blips are not shown
+  (microsleep and "sensors unreliable" are always shown at once), and recovery (red alarm ends 2.5 s after the eyes open, then 8 s yellow).
+* **Known weak spot, measured on one live recording** (68 s, glasses): looking down with the eyes only (head still) is read as *closed for several seconds* by the CNN and as open by EAR, in 428 of 1,130 frames where both were confident.
+  Head-pitch from the face landmarks did not separate these frames, so it is not used. The disagreement rule limits the damage; the real fix needs labelled examples, which `python -m drowsiness.video.clips record` / `evaluate` collect and measure.
+  Until those clips are recorded, the false-closed and false-open rates of the camera branches are **not known**.
+* **Fusion damage tests** (lights out, camera covered, sunglasses, hand over the eyes) lower the confidence and give *sensors unreliable* instead of a guess; a short ALERT transient (about 0.7 s) remains for the hand-over-eyes case.
 * Everything is tested on a few people at most (the camera video is a single person). The branches have not been compared against a ground truth of real drowsy driving.
 
 ## Data and models

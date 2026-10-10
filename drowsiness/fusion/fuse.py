@@ -6,7 +6,12 @@
     4. persistence        the score must stay above 0.6 for a few seconds before DROWSY starts
     5. microsleep rule    one long eye closure (from any eye-based branch) alerts immediately
     6. levels             ALERT / EARLY WARNING / DROWSY / MICROSLEEP  (+ SENSORS UNRELIABLE instead of a guess)
-    7. recovery           once the eyes are open again the red alarm ends after `alert_hold_s` (2.5 s), a yellow
+    7. disagreement       two confident branches that disagree (scores 0.4 apart, or one sees a closure of 1 s while the
+                          other sees open eyes) are not averaged into a verdict: no new DROWSY from the average while they
+                          disagree, the fused confidence is halved and the reason says so
+    8. minimum dwell      a level change must last `min_dwell_s` (0.3 s) before it is shown, so one-frame blips do not
+                          flash on the screen (a microsleep and "sensors unreliable" are always shown at once)
+    9. recovery           once the eyes are open again the red alarm ends after `alert_hold_s` (2.5 s), a yellow
                           "take a break" level follows for `break_s` (8 s), then ALERT. The branch scores still remember the
                           last 30 s, so the score rules stay switched off for `suppress_s` (30 s) after the recovery,
                           unless a new eye closure of 1 s or more shows up: old data must not restart the alarm.
@@ -64,11 +69,14 @@ class Fusion:
         alert_hold_s=2.5,
         break_s=8.0,
         suppress_s=30.0,
+        disagree_gap=0.4,
+        min_dwell_s=0.3,
     ):
         self.trust = dict(DEFAULT_TRUST if trust is None else trust)
         self.smooth_s, self.min_usable_weight, self.max_age_s, self.hold_s = smooth_s, min_usable_weight, max_age_s, hold_s
         self.drowsy_on, self.drowsy_off, self.persist_s, self.microsleep_s = drowsy_on, drowsy_off, persist_s, microsleep_s
         self.alert_hold_s, self.break_s, self.suppress_s = alert_hold_s, break_s, suppress_s
+        self.disagree_gap, self.min_dwell_s = disagree_gap, min_dwell_s
         self.warn = Hysteresis(warn_on, warn_off)
         self.drowsy = False
         self.reset()
@@ -80,6 +88,7 @@ class Fusion:
         self._vetoed = []
         self._phase = "normal"  # "normal" -> "alarm" (red, until the eyes have been open for alert_hold_s) -> "break" (yellow) -> "normal"
         self._open_since, self._break_until, self._suppressed_until, self._microsleep_seen = None, None, None, False
+        self._shown, self._candidate, self._candidate_since = None, None, 0.0
 
     def step(self, t, outputs):
         """outputs: {branch name: branch.latest()} for the branches that are switched on (None = no data yet)."""
@@ -102,6 +111,9 @@ class Fusion:
             used = b["weight"] * b["confidence"]
             b["share"] = used / usable if usable > 0 else 0.0  # share of the vote
             b["contribution"] = b["share"] * b["score"] if b["score"] is not None else 0.0  # points of the fused score
+
+        # 4b. do the confident branches agree on what the eyes are doing? ---------------------------------
+        disagreement = self._disagreement(branches)
 
         # 5. microsleep rule (checked first because it must never wait) --------------------------------
         # An immediate alarm must not rest on one doubtful sensor (a dark patch such as sunglasses looks like a
@@ -169,6 +181,9 @@ class Fusion:
             elif self.drowsy:
                 if s < self.drowsy_off:  # clears only below the lower threshold
                     self.drowsy = False
+            elif s >= self.drowsy_on and disagreement:
+                if self._above_since is not None:
+                    self._above_since += dt  # the persistence timer pauses: an average of two opposite opinions is no verdict
             elif s >= self.drowsy_on:
                 self._above_since = t if self._above_since is None else self._above_since
                 pending = t - self._above_since
@@ -213,17 +228,49 @@ class Fusion:
         else:
             level = ALERT
 
+        raw_level = level
+        level = self._debounce(t, level)
         return {
             "time": t,
             "level": level,
+            "raw_level": raw_level,
+            "disagreement": disagreement or None,
             "action": ACTION[level],
             "fused_score": fused,
             "smoothed_score": self.smoothed,
             "usable_weight": usable,
-            "confidence": usable / max(sum(b["weight"] for b in branches.values()), 1e-9),
+            "confidence": usable / max(sum(b["weight"] for b in branches.values()), 1e-9) * (0.5 if disagreement else 1.0),
             "branches": branches,
-            "reason": self._reason(level, fused, usable, branches, closed_by, pending, t),
+            "reason": self._reason(raw_level, fused, usable, branches, closed_by, pending, t, disagreement),
         }
+
+    def _disagreement(self, branches):
+        """Text describing how confident branches disagree, or "" if they agree (or fewer than two are confident)."""
+        sure = {n: b for n, b in branches.items() if b["status"] == "ok" and b["confidence"] >= MIN_BRANCH_CONF}
+        if len(sure) < 2:
+            return ""
+        scores = {n: b["score"] for n, b in sure.items()}
+        lo, hi = min(scores, key=scores.get), max(scores, key=scores.get)
+        if scores[hi] - scores[lo] >= self.disagree_gap:
+            return f"{hi} score {scores[hi]:.2f} vs {lo} {scores[lo]:.2f}"
+        closed = {n: b["raw"]["current_closure_s"] for n, b in sure.items() if "current_closure_s" in b["raw"]}
+        if closed:
+            longest, shortest = max(closed, key=closed.get), min(closed, key=closed.get)
+            if closed[longest] >= DROWSY_CLOSURE_DURATION and closed[shortest] < 0.5:
+                return f"{longest} sees eyes closed {closed[longest]:.1f} s, {shortest} sees them open"
+        return ""
+
+    def _debounce(self, t, level):
+        """A level change is shown only after it has lasted min_dwell_s. A microsleep and "sensors unreliable" are shown
+        at once: a warning that the system cannot see must never be held back."""
+        if self._shown is None or level == self._shown or level in (MICROSLEEP, UNRELIABLE) or self.min_dwell_s <= 0:
+            self._shown, self._candidate = level, None
+            return level
+        if level != self._candidate:
+            self._candidate, self._candidate_since = level, t
+        if t - self._candidate_since >= self.min_dwell_s:
+            self._shown, self._candidate = level, None
+        return self._shown
 
     @staticmethod
     def _eyes_open(branches):
@@ -235,7 +282,7 @@ class Fusion:
         ]
         return bool(seen) and max(seen) < 0.5
 
-    def _reason(self, level, fused, usable, branches, closed_by, pending, t):
+    def _reason(self, level, fused, usable, branches, closed_by, pending, t, disagreement=""):
         if level == MICROSLEEP:
             return f"eyes closed {max(closed_by.values()):.1f} s (seen by {', '.join(closed_by)})"
         if level == UNRELIABLE:
@@ -256,6 +303,8 @@ class Fusion:
         ignored = [f"{n} {b['status']}" for n, b in branches.items() if b["status"] != "ok"]
         if ignored:
             text += f"; ignored: {', '.join(ignored)}"
+        if disagreement:
+            text += f"; BRANCHES DISAGREE ({disagreement})"
         if self._vetoed:
             text += f"; microsleep vetoed, {', '.join(self._vetoed)} sees open eyes"
         if pending > 0 and level != DROWSY:
