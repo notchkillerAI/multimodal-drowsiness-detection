@@ -1,4 +1,4 @@
-from drowsiness.fusion.fuse import ALERT, DROWSY, EARLY_WARNING, MICROSLEEP, UNRELIABLE, Fusion
+from drowsiness.fusion.fuse import ALERT, DROWSY, EARLY_WARNING, MICROSLEEP, SLEEP, UNRELIABLE, UNRESPONSIVE, Fusion
 
 
 def out(score, conf=1.0, t=0.0, closure=0.0):
@@ -60,11 +60,11 @@ def test_persistence_short_spike_does_not_alert():
 
 def test_persistence_then_alert_and_hysteresis_clear():
     f = Fusion(trust={"ear": 1.0}, smooth_s=0, persist_s=3.0)
-    up = run(f, 4, {"ear": 0.9}, closure=1.2)  # eyes closed for 1.2 s: no microsleep, no recovery
+    up = run(f, 4, {"ear": 0.9}, closure=0.7)  # eyes closed for 0.7 s (a slow blink): no microsleep, no recovery
     assert up[0] != DROWSY and up[-1] == DROWSY  # not at once, but after ~3 s
-    middle = run(f, 2, {"ear": 0.5}, closure=1.2, start=4)  # between 0.4 and 0.6: stays DROWSY (hysteresis)
+    middle = run(f, 2, {"ear": 0.5}, closure=0.7, start=4)  # between 0.4 and 0.6: stays DROWSY (hysteresis)
     assert set(middle) == {DROWSY}
-    low = run(f, 1, {"ear": 0.3}, closure=1.2, start=6)  # below 0.4: clears
+    low = run(f, 1, {"ear": 0.3}, closure=0.7, start=6)  # below 0.4: clears
     assert low[-1] != DROWSY
 
 
@@ -102,7 +102,7 @@ def test_confident_branch_seeing_open_eyes_vetoes_microsleep():
 
 def test_both_branches_agreeing_still_gives_microsleep():
     f = Fusion(trust={"ear": 0.25, "cnn": 0.25}, smooth_s=0)
-    res = f.step(0.0, {"ear": out(0.9, conf=0.9, closure=2.5), "cnn": out(0.9, conf=0.9, closure=3.0)})
+    res = f.step(0.0, {"ear": out(0.9, conf=0.9, closure=2.5), "cnn": out(0.9, conf=0.9, closure=2.0)})
     assert res["level"] == MICROSLEEP
 
 
@@ -148,14 +148,12 @@ def test_alarm_ends_after_the_eyes_are_open_again_then_yellow_then_alert():
     assert all(level == ALERT for t, level in steps if 14 <= t <= 35)
 
 
-def test_new_long_closure_after_recovery_can_alarm_again():
+def test_new_long_closure_after_recovery_alarms_again_at_once():
     f = Fusion(trust={"ear": 1.0}, smooth_s=0, persist_s=3.0)
     steps = run_steps(f, 3, 0.9, 2.5, 0) + run_steps(f, 12, 0.9, 0.0, 3)  # microsleep, recovered, in the yellow / alert phase
     assert steps[-1][1] == ALERT
-    again = run_steps(f, 4, 0.9, 1.2, 15)  # a fresh 1.2 s closure: the score rules wake up, persistence applies
-    assert again[-1][1] == DROWSY
-    micro = run_steps(f, 1, 0.9, 2.5, 19)
-    assert micro[0][1] == MICROSLEEP
+    again = run_steps(f, 1, 0.9, 1.2, 15)  # a new closure of 1.2 s is a microsleep: shown at once, old scores or not
+    assert again[0][1] == MICROSLEEP
 
 
 def test_microsleep_during_the_break_is_immediate():
@@ -211,3 +209,34 @@ def test_a_real_change_is_shown_after_the_dwell_time():
     run(f, 1, {"ear": 0.1})
     levels = [f.step(1 + i / 10, {"ear": out(0.5, t=1 + i / 10)})["level"] for i in range(6)]
     assert levels[0] == ALERT and levels[-1] == EARLY_WARNING
+
+
+def level_for_closure(seconds):
+    f = Fusion(trust={"ear": 1.0}, smooth_s=0)
+    return f.step(0.0, {"ear": out(0.1, closure=seconds)})["level"]
+
+
+def test_closure_durations_follow_euro_ncap():
+    """Euro NCAP Driver Engagement protocol v1.2, 1.3: microsleep 1-2 s, sleep from 3 s, unresponsive from 6 s."""
+    assert level_for_closure(0.9) != MICROSLEEP  # a slow blink is no alarm
+    assert level_for_closure(1.0) == MICROSLEEP
+    assert level_for_closure(2.5) == MICROSLEEP  # the protocol leaves 2-3 s open: still a microsleep
+    assert level_for_closure(3.0) == SLEEP
+    assert level_for_closure(5.9) == SLEEP
+    assert level_for_closure(6.0) == UNRESPONSIVE
+
+
+def test_the_alarm_escalates_as_the_closure_goes_on_and_each_step_is_shown_at_once():
+    f = Fusion(trust={"ear": 1.0}, smooth_s=0, min_dwell_s=0.3)
+    seen = []
+    for i in range(80):  # eyes closed from 0 to 8 s
+        t = i / 10
+        seen.append(f.step(t, {"ear": out(0.1, 1.0, t, t)})["level"])
+    first = {level: seen.index(level) / 10 for level in (MICROSLEEP, SLEEP, UNRESPONSIVE)}
+    assert first == {MICROSLEEP: 1.0, SLEEP: 3.0, UNRESPONSIVE: 6.0}
+
+
+def test_a_confident_branch_seeing_open_eyes_vetoes_every_closure_level():
+    f = Fusion(trust={"ear": 0.25, "cnn": 0.25}, smooth_s=0)
+    res = f.step(0.0, {"ear": out(0.1, conf=0.9, closure=0.0), "cnn": out(0.9, conf=0.9, closure=7.0)})
+    assert res["level"] not in (MICROSLEEP, SLEEP, UNRESPONSIVE)

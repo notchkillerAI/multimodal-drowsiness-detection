@@ -67,10 +67,27 @@ tests/      unit tests; test_notebooks.py runs every notebook (slow)
 ## Tests and code style
 
 ```bash
-.venv/bin/python -m pytest              # 64 fast tests
+.venv/bin/python -m pytest              # 67 fast tests
 .venv/bin/python -m pytest -m slow      # also executes all notebooks (about 4 minutes)
 .venv/bin/ruff check . && .venv/bin/ruff format --check .
 ```
+
+## Warning timings and the industry rules
+
+Closure durations and warning behaviour follow **Euro NCAP, Safe Driving - Driver Engagement protocol v1.2 (July 2026)**, which I read in the original PDF:
+
+| Rule in the protocol | In this project |
+|---|---|
+| 1.3.3 microsleep: "short duration eye closure (1-2 seconds)" | `MICROSLEEP` from a closure of **1 s** (a closure under 3 s stays a microsleep: the protocol leaves 2-3 s open) |
+| 1.3.4 sleep: "continued eye closure >= 3 seconds" | `SLEEP` from **3 s** |
+| 1.3.5 unresponsive driver: eyes closed >= 6 s | `UNRESPONSIVE` from **6 s** |
+| 1.4.2 a visual and (haptic and/or audible) warning "immediately" after the driver is classified | each closure level is shown at once (never delayed by the 0.3 s dwell); visual banner + sound |
+| 1.4.2 microsleep and sleep warnings "distinct from and deliver a higher perceived level of urgency" than the others | each level flashes faster and sounds more often; SLEEP and UNRESPONSIVE use a different sound |
+| 1.3.2 drowsiness: KSS above 7, "or an equivalent metric" | `DROWSY` / `EARLY WARNING` come from the fused score, **not validated against the KSS scale** |
+
+The EU rule for drowsiness warnings (Delegated Regulation 2021/1341, Annex I Part 1, read through a mirror of the text) requires a warning at KSS 8 or higher, allows one at KSS 7, wants the warning "as soon as possible", lets warnings "cascade and intensify", and describes visual (steady or flashing) and acoustic (200-8000 Hz, 50-90 dB) warnings.
+
+**Not covered:** this is a laptop prototype, not a type-approved system. There is no KSS validation, no vehicle intervention (an emergency function would follow UNRESPONSIVE), no speed gating (the rules apply from 20 km/h or more), the sound levels were not measured, and none of Euro NCAP's test dossier (eyelid aperture 6-12 mm, lighting from 1 to 100,000 lux, skin types, eyewear) was run. The yellow "take a break" level and the 2.5 s red hold after the eyes reopen are this project's own HMI choices (the protocol gives 2 s after the end of a *transient* state only).
 
 ## What has been measured (and what has not)
 

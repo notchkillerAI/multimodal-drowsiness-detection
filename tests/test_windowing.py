@@ -10,7 +10,19 @@ def run(f, conf=0.9):
 
 
 def test_closure_levels():
-    assert [closure_level(d) for d in (0.01, 0.2, 0.7, 1.5, 3.0)] == ["NONE", "BLINK", "SLOW BLINK", "DROWSY", "MICROSLEEP"]
+    durations = (0.01, 0.2, 0.7, 0.99, 1.0, 2.5, 3.0, 5.9, 6.0, 20.0)
+    assert [closure_level(d) for d in durations] == [
+        "NONE",
+        "BLINK",
+        "SLOW BLINK",
+        "SLOW BLINK",
+        "MICROSLEEP",
+        "MICROSLEEP",
+        "SLEEP",
+        "SLEEP",
+        "UNRESPONSIVE",
+        "UNRESPONSIVE",
+    ]  # Euro NCAP: microsleep 1-2 s, sleep from 3 s, unresponsive from 6 s
 
 
 def test_two_blinks_are_blinks_not_closures_of_concern():

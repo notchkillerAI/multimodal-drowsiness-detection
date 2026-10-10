@@ -4,33 +4,46 @@
     2. smoothing          exponential average of the fused score over a few seconds
     3. hysteresis         DROWSY starts above 0.6 and only clears below 0.4 (EARLY WARNING: 0.4 / 0.3)
     4. persistence        the score must stay above 0.6 for a few seconds before DROWSY starts
-    5. microsleep rule    one long eye closure (from any eye-based branch) alerts immediately
-    6. levels             ALERT / EARLY WARNING / DROWSY / MICROSLEEP  (+ SENSORS UNRELIABLE instead of a guess)
+    5. closure rules      one long eye closure (from any confident eye-based branch) alerts immediately, with the
+                          durations of Euro NCAP (Driver Engagement protocol v1.2, section 1.3): MICROSLEEP from 1 s,
+                          SLEEP from 3 s, UNRESPONSIVE from 6 s; each level is more urgent than the one before
+    6. levels             ALERT / EARLY WARNING / DROWSY / MICROSLEEP / SLEEP / UNRESPONSIVE  (+ SENSORS UNRELIABLE instead of a guess)
     7. disagreement       two confident branches that disagree (scores 0.4 apart, or one sees a closure of 1 s while the
                           other sees open eyes) are not averaged into a verdict: no new DROWSY from the average while they
                           disagree, the fused confidence is halved and the reason says so
     8. minimum dwell      a level change must last `min_dwell_s` (0.3 s) before it is shown, so one-frame blips do not
-                          flash on the screen (a microsleep and "sensors unreliable" are always shown at once)
+                          flash on the screen (the closure levels and "sensors unreliable" are always shown at once)
     9. recovery           once the eyes are open again the red alarm ends after `alert_hold_s` (2.5 s), a yellow
                           "take a break" level follows for `break_s` (8 s), then ALERT. The branch scores still remember the
                           last 30 s, so the score rules stay switched off for `suppress_s` (30 s) after the recovery,
-                          unless a new eye closure of 1 s or more shows up: old data must not restart the alarm.
+                          unless a new eye closure of 1 s or more (a microsleep) shows up: old data must not restart the alarm.
 
 A branch that is switched off is simply left out of `outputs`; EOG and EEG plug in the same way as the video branches.
 """
 
 import math
 
-from drowsiness.common.windowing import DROWSY_CLOSURE_DURATION, MICROSLEEP_DURATION
+from drowsiness.common.windowing import MICROSLEEP_DURATION, SLEEP_DURATION, UNRESPONSIVE_DURATION
 
-ALERT, EARLY_WARNING, DROWSY, MICROSLEEP, UNRELIABLE = "ALERT", "EARLY WARNING", "DROWSY", "MICROSLEEP", "SENSORS UNRELIABLE"
+ALERT, EARLY_WARNING, DROWSY, MICROSLEEP, SLEEP, UNRESPONSIVE, UNRELIABLE = (
+    "ALERT",
+    "EARLY WARNING",
+    "DROWSY",
+    "MICROSLEEP",
+    "SLEEP",
+    "UNRESPONSIVE",
+    "SENSORS UNRELIABLE",
+)
 ACTION = {
     ALERT: "none",
-    EARLY_WARNING: "gentle visual cue",
+    EARLY_WARNING: "gentle visual cue (take a break)",
     DROWSY: "sound alarm",
     MICROSLEEP: "immediate alarm",
+    SLEEP: "immediate, more urgent alarm",
+    UNRESPONSIVE: "most urgent alarm (an emergency function would take over in a vehicle)",
     UNRELIABLE: "check sensors",
 }
+CLOSURE_LEVELS = (MICROSLEEP, SLEEP, UNRESPONSIVE)  # shown at once, never delayed by the minimum dwell time
 # ALERT here means "attentive, nothing to do" (the name used in the project's level table).
 
 DEFAULT_TRUST = {"ear": 0.25, "cnn": 0.25, "eog": 0.30, "eeg": 0.20}  # starting values, to be tuned on data
@@ -160,7 +173,7 @@ class Fusion:
 
         # 7a. old data must not restart the alarm: after a recovery the score rules sleep for a while ----------
         if any(
-            b["status"] == "ok" and b["confidence"] >= MIN_BRANCH_CONF and b["raw"].get("current_closure_s", 0.0) >= DROWSY_CLOSURE_DURATION
+            b["status"] == "ok" and b["confidence"] >= MIN_BRANCH_CONF and b["raw"].get("current_closure_s", 0.0) >= MICROSLEEP_DURATION
             for b in branches.values()
         ):
             self._suppressed_until = None  # a new closure of 1 s or more is fresh evidence
@@ -214,7 +227,7 @@ class Fusion:
 
         # 6. level ----------------------------------------------------------------------------------------
         if closed_by:
-            level = MICROSLEEP
+            level = self._closure_level(max(closed_by.values()))
         elif fused is None:
             level = UNRELIABLE
         elif self._phase == "alarm":
@@ -256,14 +269,19 @@ class Fusion:
         closed = {n: b["raw"]["current_closure_s"] for n, b in sure.items() if "current_closure_s" in b["raw"]}
         if closed:
             longest, shortest = max(closed, key=closed.get), min(closed, key=closed.get)
-            if closed[longest] >= DROWSY_CLOSURE_DURATION and closed[shortest] < 0.5:
+            if closed[longest] >= MICROSLEEP_DURATION and closed[shortest] < 0.5:
                 return f"{longest} sees eyes closed {closed[longest]:.1f} s, {shortest} sees them open"
         return ""
 
+    @staticmethod
+    def _closure_level(seconds):
+        """Euro NCAP durations: unresponsive from 6 s, sleep from 3 s, otherwise (from 1 s) microsleep."""
+        return UNRESPONSIVE if seconds >= UNRESPONSIVE_DURATION else SLEEP if seconds >= SLEEP_DURATION else MICROSLEEP
+
     def _debounce(self, t, level):
-        """A level change is shown only after it has lasted min_dwell_s. A microsleep and "sensors unreliable" are shown
+        """A level change is shown only after it has lasted min_dwell_s. The closure levels and "sensors unreliable" are shown
         at once: a warning that the system cannot see must never be held back."""
-        if self._shown is None or level == self._shown or level in (MICROSLEEP, UNRELIABLE) or self.min_dwell_s <= 0:
+        if self._shown is None or level == self._shown or level in CLOSURE_LEVELS or level == UNRELIABLE or self.min_dwell_s <= 0:
             self._shown, self._candidate = level, None
             return level
         if level != self._candidate:
@@ -283,7 +301,7 @@ class Fusion:
         return bool(seen) and max(seen) < 0.5
 
     def _reason(self, level, fused, usable, branches, closed_by, pending, t, disagreement=""):
-        if level == MICROSLEEP:
+        if level in CLOSURE_LEVELS:
             return f"eyes closed {max(closed_by.values()):.1f} s (seen by {', '.join(closed_by)})"
         if level == UNRELIABLE:
             why = ", ".join(

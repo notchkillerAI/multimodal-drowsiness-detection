@@ -9,15 +9,17 @@ The rules are the same as in EAR_Detection.ipynb, so every branch reports the sa
 
 import numpy as np
 
-# Closure-duration levels (seconds). Literature values, engineering choices where noted:
-#  - normal blink lasts 100-400 ms (Schiffman et al. 1996, as cited in later blink studies)
-#  - sleepy blinks last about 500-800 ms and awake ones 100-200 ms (patent literature on eyelid monitoring)
-#  - behavioural microsleeps last about 0.5-15 s (Poudel et al.; Innes 2013; Jonmohamadi 2016)
-#  - a closure of 1 s counts as tiredness in published CNN driver systems, an alarm at 2 s (arXiv 2001.05137)
-# The 1 s and 2 s cut-offs are engineering choices inside the microsleep range, not universal standards.
+# Eye-closure levels (seconds). The long levels follow Euro NCAP, Safe Driving - Driver Engagement protocol v1.2
+# (July 2026), section 1.3 (driver state definitions for driver monitoring systems):
+#   microsleep    "short duration eye closure (1-2 seconds)"
+#   sleep         "continued eye closure >= 3 seconds"
+#   unresponsive  "eyes have been closed for >= 6 seconds"
+# The protocol leaves 2-3 s open; here a closure under 3 s is still a MICROSLEEP. Normal blinks last 100-400 ms
+# (Schiffman et al. 1996, as cited in later blink studies); between 0.4 s and 1 s a closure is a slow blink.
 BLINK_MAX_DURATION = 0.4  # up to this: normal blink
-DROWSY_CLOSURE_DURATION = 1.0  # from this: DROWSY (between 0.4 and 1.0 s: slow blink)
-MICROSLEEP_DURATION = 2.0  # from this: MICROSLEEP
+MICROSLEEP_DURATION = 1.0  # from this: MICROSLEEP (between 0.4 and 1.0 s: slow blink)
+SLEEP_DURATION = 3.0  # from this: SLEEP
+UNRESPONSIVE_DURATION = 6.0  # from this: UNRESPONSIVE
 MIN_CLOSURE_DURATION = 0.06  # shorter than ~2 frames is noise, not a blink
 MAX_GAP = 0.5  # tracking loss up to this long, between closed frames, is still the same closure
 
@@ -71,11 +73,13 @@ def closure_level(duration):
         return "NONE"
     if duration <= BLINK_MAX_DURATION:
         return "BLINK"
-    if duration < DROWSY_CLOSURE_DURATION:
-        return "SLOW BLINK"
     if duration < MICROSLEEP_DURATION:
-        return "DROWSY"
-    return "MICROSLEEP"
+        return "SLOW BLINK"
+    if duration < SLEEP_DURATION:
+        return "MICROSLEEP"
+    if duration < UNRESPONSIVE_DURATION:
+        return "SLEEP"
+    return "UNRESPONSIVE"
 
 
 def calculate_drowsiness_score(perclos, longest_closure, blink_frequency, observed_seconds):
@@ -84,7 +88,7 @@ def calculate_drowsiness_score(perclos, longest_closure, blink_frequency, observ
     score = 0.0
     if not np.isnan(perclos):
         score += 0.50 * min(perclos / 0.30, 1.0)  # PERCLOS >= 30 % -> full
-    score += 0.35 * min(longest_closure / DROWSY_CLOSURE_DURATION, 1.0)
+    score += 0.35 * min(longest_closure / MICROSLEEP_DURATION, 1.0)
     if observed_seconds >= 20 and blink_frequency < 5:  # blink rate needs a long window
         score += 0.15
     return min(score, 1.0)

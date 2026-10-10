@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 
 STATE_COLOUR = {"OPEN": (0, 200, 0), "CLOSED": (0, 0, 255), "UNKNOWN": (0, 165, 255)}  # BGR: green, red, orange
-ALERT_LEVELS = ("DROWSY", "MICROSLEEP")
+ALERT_LEVELS = ("MICROSLEEP", "SLEEP", "UNRESPONSIVE")  # the closure levels that get the big red message
 
 
 def font_scale(frame):
