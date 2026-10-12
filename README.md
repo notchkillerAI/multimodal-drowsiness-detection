@@ -58,7 +58,8 @@ drowsiness/
   common/   branch.py (the interface every branch follows), windowing.py (closures, PERCLOS, score, confidence), util.py
   video/    ear_branch.py, cnn_branch.py, capture.py (camera / file reader), hud.py (display), runner.py (run + log + CLI),
             clips.py (record labelled clips of your face and measure the branches on them)
-  bio/      eye_events.py (EOG/EMG detector, monitor, sensor sources), synthetic.py, eog_branch.py / eeg_branch.py (placeholders)
+  bio/      eye_events.py (EOG/EMG eye-event detector, features, model, monitor), sensors.py (simulated / serial / LSL sources),
+            synthetic.py, eog_branch.py / eeg_branch.py (placeholders)
   fusion/   fuse.py
 tests/      unit tests; test_notebooks.py runs every notebook (slow)
 ```
@@ -67,7 +68,7 @@ tests/      unit tests; test_notebooks.py runs every notebook (slow)
 ## Tests and code style
 
 ```bash
-.venv/bin/python -m pytest              # 67 fast tests
+.venv/bin/python -m pytest              # 70 fast tests
 .venv/bin/python -m pytest -m slow      # also executes all notebooks (about 4 minutes)
 .venv/bin/ruff check . && .venv/bin/ruff format --check .
 ```
