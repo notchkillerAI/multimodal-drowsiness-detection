@@ -1,20 +1,43 @@
-"""EOG branch: PLACEHOLDER, to be designed later (Phase 3).
+"""EOG branch: a recorded (or live) eye-electrode signal as a fusion branch, same contract as the video branches.
 
-Plug-in contract (nothing else in the pipeline needs to change):
-  * subclass Branch, name = "eog"
-  * update(t, frame): take all samples up to time t from a replay (drowsiness/bio/replay.py) or a live stream,
-    filter, detect blinks, then call self._push(t, state, confidence) like the video branches (state OPEN /
-    CLOSED / UNKNOWN per sample window), or self._publish({...}) directly
-  * latest() must return {"score": 0..1, "confidence": 0..1, "raw": {..., "current_closure_s": ...}, "timestamp": t}
-    - confidence drops on a flat signal or heavy motion artefacts
-    - keeping "current_closure_s" in raw lets the fusion's microsleep rule use EOG as well
+    branch = EogBranch(times, microvolts, model=LinearModel.load("models/eog_drowsiness_model.json"))
+    branch.update(t)      # feeds every sample recorded up to time t, then branch.latest() has the output
+
+The output is {score, confidence, raw, timestamp}. Until the detector has learnt the person's normal eye activity
+the confidence is 0, so fusion simply gives this branch no weight. `raw` deliberately has no `current_closure_s`:
+the length of an EOG event is not the length of an eye closure, so the fusion's microsleep rules ignore this branch
+(they only look at what the cameras see).
 """
 
+import numpy as np
+
+from drowsiness.bio.eye_events import DrowsinessMonitor
 from drowsiness.common.branch import Branch
 
 
 class EogBranch(Branch):
     name = "eog"
 
+    def __init__(self, times, microvolts, model, fs=None, **monitor_settings):
+        super().__init__()
+        self.times, self.microvolts = np.asarray(times, float), np.asarray(microvolts, float)
+        self.fs = fs or float(1.0 / np.median(np.diff(self.times)))
+        self.monitor = DrowsinessMonitor(model, self.fs, "eog", **monitor_settings)
+        self._next = 0  # index of the first sample not yet fed
+
     def update(self, t, frame=None):
-        return None  # no output yet: fusion treats the branch as "no data" (weight 0)
+        end = int(np.searchsorted(self.times, t, side="right"))
+        if end > self._next:
+            out = self.monitor.update(self.times[self._next : end], self.microvolts[self._next : end])
+            self._next = end
+        else:
+            out = self.monitor.latest(t)
+        if out["raw"]["status"] != "ok":
+            out = {**out, "confidence": 0.0}  # still learning (or no data): fusion gives it no weight
+        self._publish(out)
+        return out
+
+    @property
+    def trace(self):
+        """The last 30 s of eye activity (time, strength) for plots."""
+        return self.monitor.stream.trace

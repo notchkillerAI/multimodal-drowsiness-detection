@@ -41,6 +41,14 @@ From the terminal (a camera index, a video file or a stream URL; `q` quits the w
 Each run draws the HUD (values, confidence, big red alert below the face for closures of 1 s or more), writes a per-frame CSV into `runs/`
 and prints the measured processing time.
 
+Pre-recorded demo on DROZY (face video + EOG + labels, see below), EAR + CNN + EOG fused, paced like the recording:
+```bash
+.venv/bin/python -m drowsiness.fusion.drozy_replay --subject 4 --test 3 --start 150       # window, q quits
+.venv/bin/python -m drowsiness.fusion.drozy_replay --subject 4 --test 3 --no-show --save runs/s4t3.mp4 --log runs/s4t3.csv
+```
+The dashboard shows the video with the eye points, the fused level, the three branches (score, confidence), the score history,
+the EOG activity, and the label (the person's own sleepiness rating and the lapses of a vigilance task), which is only drawn, never used by the detector.
+
 Notebooks (pick the `.venv` kernel):
 
 | Notebook | What it shows |
@@ -56,11 +64,11 @@ Notebooks (pick the `.venv` kernel):
 ```
 drowsiness/
   common/   branch.py (the interface every branch follows), windowing.py (closures, PERCLOS, score, confidence), util.py
-  video/    ear_branch.py, cnn_branch.py, capture.py (camera / file reader), hud.py (display), runner.py (run + log + CLI),
+  video/    ear_branch.py, cnn_branch.py, capture.py (camera / file reader), hud.py (display), runner.py (run + log + CLI), zoom.py (enlarges a small face),
             clips.py (record labelled clips of your face and measure the branches on them)
   bio/      eye_events.py (EOG/EMG eye-event detector, features, model, monitor), sensors.py (simulated / serial / LSL sources),
-            synthetic.py, eog_branch.py / eeg_branch.py (placeholders)
-  fusion/   fuse.py
+            synthetic.py, eog_branch.py (EOG as a fusion branch), drozy.py (DROZY loader), eeg_branch.py (placeholder)
+  fusion/   fuse.py, drozy_replay.py (DROZY replay + dashboard + CLI)
 tests/      unit tests; test_notebooks.py runs every notebook (slow)
 ```
 `data/`, `models/` and `runs/` are local and not in git.
@@ -68,7 +76,7 @@ tests/      unit tests; test_notebooks.py runs every notebook (slow)
 ## Tests and code style
 
 ```bash
-.venv/bin/python -m pytest              # 70 fast tests
+.venv/bin/python -m pytest              # 75 fast tests
 .venv/bin/python -m pytest -m slow      # also executes all notebooks (about 4 minutes)
 .venv/bin/ruff check . && .venv/bin/ruff format --check .
 ```
@@ -104,11 +112,19 @@ The EU rule for drowsiness warnings (Delegated Regulation 2021/1341, Annex I Par
   Head-pitch from the face landmarks did not separate these frames, so it is not used. The disagreement rule limits the damage; the real fix needs labelled examples, which `python -m drowsiness.video.clips record` / `evaluate` collect and measure.
   Until those clips are recorded, the false-closed and false-open rates of the camera branches are **not known**.
 * **Fusion damage tests** (lights out, camera covered, sunglasses, hand over the eyes) lower the confidence and give *sensors unreliable* instead of a guess; a short ALERT transient (about 0.7 s) remains for the hand-over-eyes case.
+* **DROZY replay (EAR + CNN + EOG fused)**: 14 people, three 10-minute tests each, near-infrared video and EEG/EOG, label = the person's own KSS rating per test (not a continuous label).
+  The faces are small (eyes about 12 px), so the replay crops and enlarges the face (`video/zoom.py`); this brings the face to the size the models expect but adds no detail.
+  The EOG model was trained on a different dataset (DD-Database) and a different electrode pair and is used here without any retraining.
+  **EOG alone, all 36 tests** (mean score of a test vs the person's KSS): Spearman 0.41 (p = 0.012), AUC 0.71 for KSS 7 or more vs 6 or less (15 vs 21 tests). A moderate trend, 36 points, not a result to quote as accuracy.
+  The person's normal blink pattern for tests 2 and 3 comes from that person's earlier test (an alert recording made before, like a calibration drive); test 1 learns from its own first 5 minutes and so scores only after 7.5 minutes.
+  The EOG branch cannot trigger a microsleep (an eye *event* is not an eye *closure*). EEG is not used yet.
 * Everything is tested on a few people at most (the camera video is a single person). The branches have not been compared against a ground truth of real drowsy driving.
 
 ## Data and models
 
 * DD-Database (EOG): Zenodo 8284057, CC0.
+* DROZY (ULg Multimodality Drowsiness Database): Massoz, Langohr, François, Verly, *WACV 2016*; downloaded from [ORBi](https://orbi.uliege.be/handle/2268/191620)
+  into `data/drozy/` (2.5 GB, not in git). Research and evaluation use only, no redistribution, no modification (licence agreement in the archive).
 * MRL Eye dataset (eye-state training), YuNet face detector (OpenCV, MIT), dlib 68-point landmark model: see each source for its terms before any use beyond coursework.
 
 Reference design: Beles et al., *Sensors* 2024, 24, 1541 (fuzzy multi-sensor fusion).

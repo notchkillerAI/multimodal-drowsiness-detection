@@ -265,14 +265,17 @@ class DrowsinessMonitor:
         baseline_s=BASELINE_S,
         window_s=WINDOW_S,
         max_gap_s=1.0,
+        baseline=None,
     ):
         self.model, self.kind = model, kind
         self.to_microvolts, self.offset, self.polarity = to_microvolts, offset, polarity
         self.calibrate_s, self.baseline_s, self.window_s, self.max_gap_s = calibrate_s, baseline_s, window_s, max_gap_s
         self.stream = EyeEventStream(fs, kind, mains_hz, calibrate_s)
-        self.ready_after_s = calibrate_s + baseline_s + window_s  # no score before this much signal has been seen
+        # no score before this much signal has been seen; a baseline taken from an earlier recording of the same
+        # person (see `enrol_baseline`) makes the 5 minutes of learning in this session unnecessary
+        self.ready_after_s = calibrate_s + window_s + (0 if baseline else baseline_s)
         self._chunks = deque()  # (time of the last sample, mean confidence of the chunk, number of samples)
-        self._last_t, self._baseline = None, None
+        self._last_t, self._baseline = None, baseline
 
     def update(self, times, raw):
         """Feed a chunk of raw device values (and their times in seconds); returns the latest output."""
@@ -334,6 +337,16 @@ class DrowsinessMonitor:
             **extra,
         }
         return {"score": score, "confidence": confidence, "raw": raw, "timestamp": now}
+
+
+def enrol_baseline(times, raw, fs, kind, calibrate_s=CALIBRATE_S, baseline_s=BASELINE_S, **device):
+    """The person's normal eye-event features, from an earlier recording of them while alert (device settings as in
+    DrowsinessMonitor). Pass the result as `baseline=` to start scoring after calibrate_s + window_s instead of 7.5 minutes."""
+    monitor = DrowsinessMonitor(None, fs, kind, calibrate_s=calibrate_s, baseline_s=baseline_s, **device)
+    times = np.asarray(times, float)
+    keep = times < times[0] + calibrate_s + baseline_s
+    monitor.update(times[keep] - times[0], np.asarray(raw, float)[keep])
+    return window_features(monitor.stream.detector.events, calibrate_s + baseline_s, baseline_s)
 
 
 def verdict(out, threshold=0.5, min_confidence=0.5):
