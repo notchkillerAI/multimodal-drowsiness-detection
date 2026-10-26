@@ -117,6 +117,19 @@ The EU rule for drowsiness warnings (Delegated Regulation 2021/1341, Annex I Par
   The EOG model was trained on a different dataset (DD-Database) and a different electrode pair and is used here without any retraining.
   **EOG alone, all 36 tests** (mean score of a test vs the person's KSS): Spearman 0.41 (p = 0.012), AUC 0.71 for KSS 7 or more vs 6 or less (15 vs 21 tests). A moderate trend, 36 points, not a result to quote as accuracy.
   The person's normal blink pattern for tests 2 and 3 comes from that person's earlier test (an alert recording made before, like a calibration drive); test 1 learns from its own first 5 minutes and so scores only after 7.5 minutes.
+  **Full 10-minute replays of 6 tests** (share of the test in each fused level; one run each, tuning nothing on them):
+
+  | test | KSS | ALERT | EARLY WARNING | DROWSY and above |
+  |---|---|---|---|---|
+  | 3-1 | 2 | 100 % | 0 | 0 |
+  | 6-1 | 2 | 69 % | 30 % | 0 |
+  | 3-3 | 4 | 100 % | 0 | 0 |
+  | 4-1 | 4 | 98 % | 1 % | 0 |
+  | 6-3 | 7 | 14 % | 76 % | 9 % |
+  | 4-3 | 9 | 6 % | 57 % | 37 % (32 % DROWSY, 4 % MICROSLEEP, 1 % SLEEP) |
+
+  The three alert tests stay mostly ALERT, the two sleepy ones are mostly in a warning state. Six tests of four people are an illustration, not an accuracy: nothing here says how many
+  false alarms or misses a driver would see. Closure timings on near-infrared video of 12-px eyes have no per-frame ground truth either.
   The EOG branch cannot trigger a microsleep (an eye *event* is not an eye *closure*). EEG is not used yet.
 * Everything is tested on a few people at most (the camera video is a single person). The branches have not been compared against a ground truth of real drowsy driving.
 
