@@ -28,7 +28,7 @@ from drowsiness.bio.eye_events import LinearModel, enrol_baseline
 from drowsiness.fusion.fuse import ALERT, DROWSY, EARLY_WARNING, MICROSLEEP, SLEEP, UNRELIABLE, UNRESPONSIVE, Fusion
 from drowsiness.video.cnn_branch import CnnBranch
 from drowsiness.video.ear_branch import EarBranch
-from drowsiness.video.hud import draw_face_box, put_text
+from drowsiness.video.hud import STATE_COLOUR, draw_face_box, put_text
 from drowsiness.video.zoom import FaceZoom
 
 EOG_MODEL = "models/eog_drowsiness_model.json"
@@ -188,7 +188,7 @@ def draw_tiles(canvas, result, replay):
         bar(canvas, x + 8, y + 124, 176, b["confidence"], (160, 160, 160), 4)
 
 
-def draw_history(canvas, replay, t, x=660, y=295, w=600, h=210, span=120.0):
+def draw_history(canvas, replay, t, x=660, y=295, w=600, h=180, span=120.0):
     panel(canvas, x, y, w, h)
     put_text(canvas, f"scores, {span:.0f} s", (x + 8, y + 20), 0.5, TEXT, 1)
     hist = replay.history
@@ -215,18 +215,28 @@ def draw_history(canvas, replay, t, x=660, y=295, w=600, h=210, span=120.0):
         cv2.line(canvas, (px(tt), y + h - 8), (px(tt), y + h - 2), LEVEL_COLOUR[level], 3)
 
 
-def draw_eog(canvas, replay, x=660, y=515, w=600, h=90):
+def draw_eog(canvas, replay, t, x=660, y=485, w=600, h=120, span=30.0):
+    """The EOG as the detector sees it (band-passed eye activity), with the detected eye events shaded and the present at the right edge."""
     panel(canvas, x, y, w, h)
-    put_text(canvas, "EOG eye activity, last 30 s", (x + 8, y + 18), 0.45, TEXT, 1)
-    trace = np.array(replay.eog.trace, dtype=float)
+    put_text(canvas, f"EOG eye activity, last {span:.0f} s (shaded = eye event found)", (x + 8, y + 18), 0.45, TEXT, 1)
+    px = lambda tt: x + 8 + int((tt - (t - span)) / span * (w - 16))  # noqa: E731
+    detector = replay.eog.monitor.stream.detector
+    events = [(e["start"], e["end"]) for e in detector.events if e["end"] > t - span]
+    if detector.in_event:
+        events.append((detector.start_t, t))
+    for start, end in events:
+        left, right = max(px(start), x + 8), min(px(end), x + w - 8)
+        cv2.rectangle(canvas, (left, y + 26), (max(right, left + 2), y + h - 4), (70, 70, 120), -1)
+    trace = np.array([p for p in replay.eog.trace if p[0] > t - span], dtype=float)
     if len(trace) > 2:
         activity = np.clip(trace[:, 1] / max(np.percentile(trace[:, 1], 99.5), 1e-6), 0, 1)
-        ys = y + h - 6 - (activity * (h - 32)).astype(int)
-        xs = x + 8 + ((trace[:, 0] - trace[0, 0]) / 30.0 * (w - 16)).astype(int)
+        ys = y + h - 6 - (activity * (h - 36)).astype(int)
+        xs = np.array([px(tt) for tt in trace[:, 0]])
         cv2.polylines(canvas, [np.column_stack([xs, ys]).astype(np.int32)], False, BRANCH_COLOUR["eog"], 1, cv2.LINE_AA)
+    cv2.line(canvas, (x + w - 8, y + 24), (x + w - 8, y + h - 4), (230, 230, 230), 1)
     out = replay.eog.latest()
     if out and out["raw"].get("eye_closing_now"):
-        put_text(canvas, "eye event", (x + w - 90, y + 18), 0.45, (60, 60, 230), 1)
+        put_text(canvas, "EYE EVENT", (x + w - 100, y + 18), 0.45, (90, 90, 255), 1)
 
 
 def draw_label(canvas, replay, t):
@@ -260,11 +270,16 @@ def draw_dashboard(replay, t, zoomed, result):
     view = zoomed.copy()
     replay.ear.draw(view)
     draw_face_box(view, replay.box, replay.ear.last["state"])
+    for i, (name, branch) in enumerate((("EAR", replay.ear), ("CNN", replay.cnn))):  # what each camera branch sees, on the picture
+        state, closed = branch.last["state"], branch.latest()["raw"]["current_closure_s"]
+        put_text(
+            view, f"{name}: {state}" + (f" {closed:.1f}s" if state == "CLOSED" else ""), (12, 40 + 44 * i), 1.1, STATE_COLOUR[state], 3
+        )
     canvas[20:620, 20:620] = cv2.resize(view, (600, 600), interpolation=cv2.INTER_AREA)
     draw_verdict(canvas, result, t)
     draw_tiles(canvas, result, replay)
     draw_history(canvas, replay, t)
-    draw_eog(canvas, replay)
+    draw_eog(canvas, replay, t)
     draw_label(canvas, replay, t)
     draw_progress(canvas, replay, t)
     reason = result["reason"]
