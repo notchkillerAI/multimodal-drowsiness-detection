@@ -297,7 +297,9 @@ def log_row(t, result, kss):
     return row + [kss]
 
 
-def run(subject, test, start=0.0, max_seconds=None, show="window", realtime=True, save_to=None, log_csv=None, every=1, port=8765):
+def run(
+    subject, test, start=0.0, max_seconds=None, show="window", realtime=True, save_to=None, log_csv=None, every=1, port=8765, server=None
+):
     """Replay a test. `start`: seconds skipped on screen (the pipelines still process them). Returns the Replay (with its history).
 
     show   "window" (OpenCV window, q quits), "browser" (the same picture at http://localhost:`port`, for when no window can open;
@@ -307,11 +309,12 @@ def run(subject, test, start=0.0, max_seconds=None, show="window", realtime=True
     if show == "notebook":
         from IPython.display import Image, display
     replay = Replay(subject, test)
-    handle, server = None, None
+    handle, created = None, False
     if show == "browser":
         from drowsiness.video.stream import MjpegServer
 
-        server = MjpegServer(port)
+        created = server is None
+        server = server or MjpegServer(port)
         print(f"Open {server.url} in a browser; the replay starts when the page is open.", flush=True)
     writer = log = log_file = None
     if log_csv:
@@ -364,7 +367,7 @@ def run(subject, test, start=0.0, max_seconds=None, show="window", realtime=True
             log_file.close()
         if show == "window":
             cv2.destroyAllWindows()
-        if server:
+        if server and created:
             server.close()
     return replay
 
@@ -377,10 +380,29 @@ def summary(replay):
     return f"subject {replay.subject} test {replay.test}: KSS {replay.kss} ({kss_word(replay.kss)}); levels shown: {shares}"
 
 
+def play_all(a):
+    """Every test of the dataset in turn, in one browser page; the summary line of each test is printed when it ends."""
+    server = None
+    if not a.no_show and a.browser:
+        from drowsiness.video.stream import MjpegServer
+
+        server = MjpegServer(a.port)
+        print(f"Open {server.url} in a browser; the replay starts when the page is open.", flush=True)
+    try:
+        for subject, test in drozy.tests():
+            show = None if a.no_show else ("browser" if a.browser else "window")
+            replay = run(subject, test, a.start, a.max_seconds, show, not a.fast, None, a.log, port=a.port, server=server)
+            print(summary(replay), flush=True)
+    finally:
+        if server:
+            server.close()
+
+
 def cli():
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    p.add_argument("--subject", type=int, required=True)
-    p.add_argument("--test", type=int, required=True)
+    p.add_argument("--subject", type=int)
+    p.add_argument("--test", type=int)
+    p.add_argument("--all", action="store_true", help="play every test of the dataset one after the other (use with --browser)")
     p.add_argument("--start", type=float, default=0.0, help="seconds not shown (processed but skipped on screen)")
     p.add_argument("--max-seconds", type=float)
     p.add_argument("--save", help="write the dashboard to this mp4")
@@ -390,6 +412,11 @@ def cli():
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--fast", action="store_true", help="do not pace the replay to the recording's clock")
     a = p.parse_args()
+    if a.all:
+        play_all(a)
+        return
+    if a.subject is None or a.test is None:
+        p.error("--subject and --test are needed (or --all)")
     replay = run(
         a.subject,
         a.test,
