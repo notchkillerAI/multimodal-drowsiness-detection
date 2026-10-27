@@ -19,6 +19,8 @@ CAMERA_CELLS = {
     "source=0, show": 'source="data/test_vid_1.mov", max_seconds=5, show',
     "run_video(CnnBranch(), 0,": 'run_video(CnnBranch(), "data/test_vid_1.mov", max_seconds=5,',
     "run_fusion(0,": 'run_fusion("data/test_vid_1.mov", max_seconds=5,',
+    # the DROZY section: a short stretch, not paced like real time
+    '"start": 150, "seconds": 240, "realtime": True': '"start": 5, "seconds": 20, "realtime": False',
 }
 
 

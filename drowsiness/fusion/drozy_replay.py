@@ -282,9 +282,16 @@ def log_row(t, result, kss):
     return row + [kss]
 
 
-def run(subject, test, start=0.0, max_seconds=None, show=True, realtime=True, save_to=None, log_csv=None):
-    """Replay a test. `start`: seconds skipped on screen (the pipelines still process them). Returns the Replay (with its history)."""
+def run(subject, test, start=0.0, max_seconds=None, show="window", realtime=True, save_to=None, log_csv=None, every=1):
+    """Replay a test. `start`: seconds skipped on screen (the pipelines still process them). Returns the Replay (with its history).
+
+    show   "window" (OpenCV window, q quits), "notebook" (inline picture; `every` = draw every n-th frame) or None
+    The dashboard shows a person's face: DROZY's licence forbids redistribution, so do not commit notebook outputs that contain it."""
+    show = "window" if show is True else (show or None)
+    if show == "notebook":
+        from IPython.display import Image, display
     replay = Replay(subject, test)
+    handle = None
     writer = log = log_file = None
     if log_csv:
         os.makedirs(os.path.dirname(log_csv) or ".", exist_ok=True)
@@ -302,7 +309,7 @@ def run(subject, test, start=0.0, max_seconds=None, show=True, realtime=True, sa
                 break
             if log:
                 log.writerow(log_row(t, result, replay.kss))
-            if t < start or not (show or save_to):
+            if t < start or not (show or save_to) or (show == "notebook" and not save_to and replay.frame_no % every):
                 continue
             image = draw_dashboard(replay, t, zoomed, result)
             if save_to and writer is None:
@@ -314,16 +321,20 @@ def run(subject, test, start=0.0, max_seconds=None, show=True, realtime=True, sa
                 wall = wall or (time.perf_counter() - t)
                 if realtime:  # pace the replay like the real recording (when processing is faster than real time)
                     time.sleep(max(0.0, wall + t - time.perf_counter()))
-                cv2.imshow(f"DROZY {subject}-{test}: EAR + CNN + EOG fusion (q to quit)", image)
-                if cv2.waitKey(1) & 0xFF == ord("q"):
-                    break
+                if show == "notebook":
+                    picture = Image(data=cv2.imencode(".jpg", image)[1].tobytes())
+                    handle = display(picture, display_id=True) if handle is None else (handle.update(picture) or handle)
+                else:
+                    cv2.imshow(f"DROZY {subject}-{test}: EAR + CNN + EOG fusion (q to quit)", image)
+                    if cv2.waitKey(1) & 0xFF == ord("q"):
+                        break
     finally:
         replay.stop()
         if writer:
             writer.release()
         if log_file:
             log_file.close()
-        if show:
+        if show == "window":
             cv2.destroyAllWindows()
     return replay
 
@@ -347,7 +358,7 @@ def cli():
     p.add_argument("--no-show", action="store_true", help="no window (use with --save or --log)")
     p.add_argument("--fast", action="store_true", help="do not pace the replay to the recording's clock")
     a = p.parse_args()
-    replay = run(a.subject, a.test, a.start, a.max_seconds, not a.no_show, not a.fast, a.save, a.log)
+    replay = run(a.subject, a.test, a.start, a.max_seconds, None if a.no_show else "window", not a.fast, a.save, a.log)
     print(summary(replay))
 
 

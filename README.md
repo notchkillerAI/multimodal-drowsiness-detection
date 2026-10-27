@@ -57,7 +57,7 @@ Notebooks (pick the `.venv` kernel):
 | `DL_classifier.ipynb` | CNN branch: model comparison, one image, a video file, the live camera |
 | `EOG_EDA.ipynb` | exploration of the EOG data, eye events, features, model training and evaluation (leave-one-person-out) |
 | `EOG_Detection.ipynb` | the finished EOG/EMG detector: replay of a recording, and the live sensor section |
-| `multimodal_drowsiness_detection.ipynb` | fusion: modalities on/off, recorded and live, failure tests |
+| `multimodal_drowsiness_detection.ipynb` | fusion: modalities on/off, recorded and live, failure tests; the last section replays DROZY (video + EOG + labels) in real time through EAR + CNN + EOG |
 
 ## Layout
 
