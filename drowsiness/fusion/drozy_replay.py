@@ -17,12 +17,12 @@ import csv
 import os
 import time
 from collections import Counter
-from datetime import datetime
 
 import cv2
 import numpy as np
 
 from drowsiness.bio import drozy
+from drowsiness.bio.drozy import kss_word, lapses, pvt_reactions
 from drowsiness.bio.eog_branch import EogBranch
 from drowsiness.bio.eye_events import LinearModel, enrol_baseline
 from drowsiness.fusion.fuse import ALERT, DROWSY, EARLY_WARNING, MICROSLEEP, SLEEP, UNRELIABLE, UNRESPONSIVE, Fusion
@@ -32,7 +32,6 @@ from drowsiness.video.hud import STATE_COLOUR, draw_face_box, put_text
 from drowsiness.video.zoom import FaceZoom
 
 EOG_MODEL = "models/eog_drowsiness_model.json"
-LAPSE_S = 0.5  # a reaction slower than this (or none) is a lapse of attention (standard PVT definition)
 SIZE = (1280, 720)  # dashboard size (width, height)
 BG, PANEL, TEXT, MUTED = (28, 28, 28), (45, 45, 45), (235, 235, 235), (150, 150, 150)
 LEVEL_COLOUR = {  # BGR
@@ -45,31 +44,6 @@ LEVEL_COLOUR = {  # BGR
     UNRELIABLE: (130, 130, 130),
 }
 BRANCH_COLOUR = {"ear": (255, 170, 60), "cnn": (90, 200, 90), "eog": (80, 140, 255)}  # BGR
-KSS_WORDS = {range(1, 6): "ALERT", range(6, 7): "NOT CLEAR", range(7, 10): "SLEEPY"}  # EU DDAW: KSS 7 optional, 8-9 required
-
-
-def kss_word(kss):
-    return next((w for r, w in KSS_WORDS.items() if kss in r), "?")
-
-
-def pvt_reactions(subject, test, root=drozy.ROOT):
-    """[(stimulus time s, reaction time s or None)] of the vigilance task, times counted from the start of the test."""
-    parse = lambda s: datetime.strptime(s.strip(), "%Y-%m-%d_%H.%M.%S.%f")  # noqa: E731
-    with open(f"{root}/pvt-rt/{subject}-{test}.csv") as f:
-        lines = [line.strip() for line in f if line.strip()]
-    start, out = parse(lines[0]), []
-    for line in lines[1:]:
-        shown, _, answered = line.partition(";")
-        shown_t = (parse(shown) - start).total_seconds()
-        out.append((shown_t, (parse(answered) - parse(shown)).total_seconds() if answered else None))
-    return out
-
-
-def lapses(reactions, t, window=60.0):
-    """(lapses, answered, mean reaction time) of the stimuli shown in the last `window` seconds."""
-    recent = [rt for shown, rt in reactions if t - window < shown <= t]
-    answered = [rt for rt in recent if rt is not None]
-    return sum(rt is None or rt > LAPSE_S for rt in recent), len(recent), (float(np.mean(answered)) if answered else float("nan"))
 
 
 class Replay:

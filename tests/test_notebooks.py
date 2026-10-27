@@ -21,6 +21,8 @@ CAMERA_CELLS = {
     "run_fusion(0,": 'run_fusion("data/test_vid_1.mov", max_seconds=5,',
     # the DROZY section: a short stretch, not paced like real time
     '"start": 0, "seconds": 600, "realtime": True': '"start": 5, "seconds": 20, "realtime": False',
+    # EOG_Detection, part C: faster than real time
+    '"minutes": 10, "speed": 1.0}': '"minutes": 10, "speed": 30.0}',
 }
 
 

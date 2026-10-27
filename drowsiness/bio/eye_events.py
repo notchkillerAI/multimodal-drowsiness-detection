@@ -172,11 +172,14 @@ class EyeEventStream:
         self.k = max(1, int(fs // 200))  # the detector works at about 200 Hz
         self.detector = BlinkDetector(fs / self.k, calibrate_s)
         self.trace = deque(maxlen=int(30 * fs / self.k))  # the last 30 s of activity, for plots
+        self.signed_trace = deque(maxlen=self.trace.maxlen)  # EOG only: the same seconds as the filtered signal (microvolts)
+        self._signed = None
 
     def activity(self, uV):
         """Band-passed signal -> how strong the eye activity is (always positive)."""
         y = self.bandpass(uV)
         if self.kind == "eog":
+            self._signed = y  # kept for plots: the filtered eye signal itself
             return np.abs(y)  # up and down movements count alike
         y = self.notch(y) if self.notch else y
         return np.maximum(self.smooth(np.abs(y)), 0.0)
@@ -189,6 +192,8 @@ class EyeEventStream:
         keep = np.arange(self._skip, len(activity), self.k)  # keep every k-th sample
         self._skip = (self._skip - len(activity)) % self.k
         self.trace.extend(zip(times[keep], activity[keep]))
+        if self.kind == "eog":
+            self.signed_trace.extend(zip(times[keep], self._signed[keep]))
         return self.detector.process(times[keep], activity[keep], {"flat": bool(flat), "clipped": bool(clipped)})
 
 
