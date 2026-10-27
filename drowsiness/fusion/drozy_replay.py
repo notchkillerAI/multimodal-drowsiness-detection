@@ -297,16 +297,22 @@ def log_row(t, result, kss):
     return row + [kss]
 
 
-def run(subject, test, start=0.0, max_seconds=None, show="window", realtime=True, save_to=None, log_csv=None, every=1):
+def run(subject, test, start=0.0, max_seconds=None, show="window", realtime=True, save_to=None, log_csv=None, every=1, port=8765):
     """Replay a test. `start`: seconds skipped on screen (the pipelines still process them). Returns the Replay (with its history).
 
-    show   "window" (OpenCV window, q quits), "notebook" (inline picture; `every` = draw every n-th frame) or None
+    show   "window" (OpenCV window, q quits), "browser" (the same picture at http://localhost:`port`, for when no window can open;
+           the replay waits until the page is open), "notebook" (inline picture; `every` = draw every n-th frame) or None
     The dashboard shows a person's face: DROZY's licence forbids redistribution, so do not commit notebook outputs that contain it."""
     show = "window" if show is True else (show or None)
     if show == "notebook":
         from IPython.display import Image, display
     replay = Replay(subject, test)
-    handle = None
+    handle, server = None, None
+    if show == "browser":
+        from drowsiness.video.stream import MjpegServer
+
+        server = MjpegServer(port)
+        print(f"Open {server.url} in a browser; the replay starts when the page is open.", flush=True)
     writer = log = log_file = None
     if log_csv:
         os.makedirs(os.path.dirname(log_csv) or ".", exist_ok=True)
@@ -327,6 +333,11 @@ def run(subject, test, start=0.0, max_seconds=None, show="window", realtime=True
             if t < start or not (show or save_to) or (show == "notebook" and not save_to and replay.frame_no % every):
                 continue
             image = draw_dashboard(replay, t, zoomed, result)
+            if server and wall is None:
+                server.show(image)
+                if not server.wait_for_viewer():
+                    print("Nobody opened the page: stopped.")
+                    break
             if save_to and writer is None:
                 os.makedirs(os.path.dirname(save_to) or ".", exist_ok=True)
                 writer = cv2.VideoWriter(save_to, cv2.VideoWriter_fourcc(*"mp4v"), 30, SIZE)
@@ -336,7 +347,9 @@ def run(subject, test, start=0.0, max_seconds=None, show="window", realtime=True
                 wall = wall or (time.perf_counter() - t)
                 if realtime:  # pace the replay like the real recording (when processing is faster than real time)
                     time.sleep(max(0.0, wall + t - time.perf_counter()))
-                if show == "notebook":
+                if show == "browser":
+                    server.show(image)
+                elif show == "notebook":
                     picture = Image(data=cv2.imencode(".jpg", image)[1].tobytes())
                     handle = display(picture, display_id=True) if handle is None else (handle.update(picture) or handle)
                 else:
@@ -351,6 +364,8 @@ def run(subject, test, start=0.0, max_seconds=None, show="window", realtime=True
             log_file.close()
         if show == "window":
             cv2.destroyAllWindows()
+        if server:
+            server.close()
     return replay
 
 
@@ -371,9 +386,21 @@ def cli():
     p.add_argument("--save", help="write the dashboard to this mp4")
     p.add_argument("--log", help="write a CSV with one row per frame")
     p.add_argument("--no-show", action="store_true", help="no window (use with --save or --log)")
+    p.add_argument("--browser", action="store_true", help="show it at http://localhost:PORT instead of an OpenCV window")
+    p.add_argument("--port", type=int, default=8765)
     p.add_argument("--fast", action="store_true", help="do not pace the replay to the recording's clock")
     a = p.parse_args()
-    replay = run(a.subject, a.test, a.start, a.max_seconds, None if a.no_show else "window", not a.fast, a.save, a.log)
+    replay = run(
+        a.subject,
+        a.test,
+        a.start,
+        a.max_seconds,
+        None if a.no_show else ("browser" if a.browser else "window"),
+        not a.fast,
+        a.save,
+        a.log,
+        port=a.port,
+    )
     print(summary(replay))
 
 

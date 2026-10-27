@@ -44,6 +44,7 @@ and prints the measured processing time.
 Pre-recorded demo on DROZY (face video + EOG + labels, see below), EAR + CNN + EOG fused, paced like the recording:
 ```bash
 .venv/bin/python -m drowsiness.fusion.drozy_replay --subject 4 --test 3 --start 150       # window, q quits
+.venv/bin/python -m drowsiness.fusion.drozy_replay --subject 4 --test 3 --start 150 --browser   # same picture at http://localhost:8765 (if no window opens)
 .venv/bin/python -m drowsiness.fusion.drozy_replay --subject 4 --test 3 --no-show --save runs/s4t3.mp4 --log runs/s4t3.csv
 ```
 The dashboard shows the video with the eye points, the fused level, the three branches (score, confidence), the score history,
@@ -64,7 +65,7 @@ Notebooks (pick the `.venv` kernel):
 ```
 drowsiness/
   common/   branch.py (the interface every branch follows), windowing.py (closures, PERCLOS, score, confidence), util.py
-  video/    ear_branch.py, cnn_branch.py, capture.py (camera / file reader), hud.py (display), runner.py (run + log + CLI), zoom.py (enlarges a small face),
+  video/    ear_branch.py, cnn_branch.py, capture.py (camera / file reader), hud.py (display), runner.py (run + log + CLI), zoom.py (enlarges a small face), stream.py (a picture in the browser),
             clips.py (record labelled clips of your face and measure the branches on them)
   bio/      eye_events.py (EOG/EMG eye-event detector, features, model, monitor), sensors.py (simulated / serial / LSL sources),
             synthetic.py, eog_branch.py (EOG as a fusion branch), drozy.py (DROZY loader), eeg_branch.py (placeholder)
