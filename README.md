@@ -118,19 +118,22 @@ The EU rule for drowsiness warnings (Delegated Regulation 2021/1341, Annex I Par
   The EOG model was trained on a different dataset (DD-Database) and a different electrode pair and is used here without any retraining.
   **EOG alone, all 36 tests** (mean score of a test vs the person's KSS): Spearman 0.41 (p = 0.012), AUC 0.71 for KSS 7 or more vs 6 or less (15 vs 21 tests). A moderate trend, 36 points, not a result to quote as accuracy.
   The person's normal blink pattern for tests 2 and 3 comes from that person's earlier test (an alert recording made before, like a calibration drive); test 1 learns from its own first 5 minutes and so scores only after 7.5 minutes.
-  **Full 10-minute replays of 6 tests** (share of the test in each fused level; one run each, tuning nothing on them):
+  **All 36 tests replayed in full** (`python -m drowsiness.fusion.drozy_eval`; nothing tuned on them; per-test table and plot in `docs/drozy_results.png`).
+  One number per test, then the AUC for KSS 7 or more (15 tests) against 6 or less (21 tests) and the Spearman correlation with KSS:
 
-  | test | KSS | ALERT | EARLY WARNING | DROWSY and above |
-  |---|---|---|---|---|
-  | 3-1 | 2 | 100 % | 0 | 0 |
-  | 6-1 | 2 | 69 % | 30 % | 0 |
-  | 3-3 | 4 | 100 % | 0 | 0 |
-  | 4-1 | 4 | 98 % | 1 % | 0 |
-  | 6-3 | 7 | 14 % | 76 % | 9 % |
-  | 4-3 | 9 | 6 % | 57 % | 37 % (32 % DROWSY, 4 % MICROSLEEP, 1 % SLEEP) |
+  | measure | AUC | Spearman |
+  |---|---|---|
+  | EAR alone | 0.74 | +0.54 |
+  | CNN alone | 0.80 | +0.68 |
+  | EOG alone | 0.71 | +0.37 |
+  | **fused score** | 0.79 | +0.59 |
+  | share of time in DROWSY or worse | 0.80 | +0.55 |
 
-  The three alert tests stay mostly ALERT, the two sleepy ones are mostly in a warning state. Six tests of four people are an illustration, not an accuracy: nothing here says how many
-  false alarms or misses a driver would see. Closure timings on near-infrared video of 12-px eyes have no per-frame ground truth either.
+  Time in each level: tests with KSS 6 or less spend 83 % of the time in ALERT and 0 % in DROWSY or worse; tests with KSS 7 or more spend 42 % in ALERT and 14 % in DROWSY or worse.
+  What this says, plainly:
+  * The fused score **does not beat the best single branch** (CNN alone, 0.80 against 0.79). With 36 tests the difference is noise, so fusion is not shown to help on this data; the reasons for it are robustness (a lost camera or electrode) and the microsleep rules, which this label cannot test.
+  * **Misses:** 5 of the 15 sleepy tests stay mostly ALERT (5-2, 5-3, 10-3, 14-2, 14-3), two of them (5-3, 14-2) for 100 % of the time. **False warnings:** the alert test 6-2 spends 80 % of the time in EARLY WARNING.
+  * One self-rating per 10-minute test is a coarse label (a person can be sleepy and still keep their eyes open), the faces are small near-infrared pictures, and the EOG model comes from another dataset. This is a first honest measurement, not a result to present as accuracy.
   The EOG branch cannot trigger a microsleep (an eye *event* is not an eye *closure*). EEG is not used yet.
 * Everything is tested on a few people at most (the camera video is a single person). The branches have not been compared against a ground truth of real drowsy driving.
 
