@@ -24,7 +24,7 @@ import numpy as np
 from drowsiness.bio import drozy
 from drowsiness.bio.drozy import kss_word, lapses, pvt_reactions
 from drowsiness.bio.eog_branch import EogBranch
-from drowsiness.bio.eye_events import LinearModel, enrol_baseline
+from drowsiness.bio.eye_events import CALIBRATE_S, WINDOW_S, LinearModel, enrol_baseline
 from drowsiness.fusion.fuse import ALERT, DROWSY, EARLY_WARNING, MICROSLEEP, SLEEP, UNRELIABLE, UNRESPONSIVE, Fusion
 from drowsiness.video.cnn_branch import CnnBranch
 from drowsiness.video.ear_branch import EarBranch
@@ -69,12 +69,14 @@ class Replay:
         so the detector learns from its own first 5 minutes and starts scoring at 7.5 minutes."""
         t_eog, uV, fs = drozy.eog(self.subject, self.test)
         earlier = [t for s, t in drozy.tests() if s == self.subject and t < self.test]
-        baseline = None
+        baseline = warm_up = None
         if earlier:
             t_ref, uV_ref, _ = drozy.eog(self.subject, min(earlier))
             baseline = enrol_baseline(t_ref, uV_ref, fs, "eog")
+            n = int((CALIBRATE_S + WINDOW_S) * fs)  # the last 2.5 minutes of that test: the detector starts "already running"
+            warm_up = (t_ref[-n:], uV_ref[-n:])
         self.baseline_from = min(earlier) if earlier else None
-        return EogBranch(t_eog, uV, LinearModel.load(EOG_MODEL), fs=fs, baseline=baseline)
+        return EogBranch(t_eog, uV, LinearModel.load(EOG_MODEL), fs=fs, baseline=baseline, warm_up=warm_up)
 
     def step(self):
         """Process the next video frame; returns (t, zoomed frame, fusion result) or None at the end."""

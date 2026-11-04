@@ -18,12 +18,16 @@ from drowsiness.common.branch import Branch
 class EogBranch(Branch):
     name = "eog"
 
-    def __init__(self, times, microvolts, model, fs=None, **monitor_settings):
+    def __init__(self, times, microvolts, model, fs=None, warm_up=None, **monitor_settings):
+        """warm_up: optional (times, microvolts) from the end of an earlier recording of the same person (with `baseline=`
+        in the monitor settings): the branch is then ready from the start, with a confidence that rises over 2 minutes."""
         super().__init__()
         self.times, self.microvolts = np.asarray(times, float), np.asarray(microvolts, float)
         self.fs = fs or float(1.0 / np.median(np.diff(self.times)))
         self.monitor = DrowsinessMonitor(model, self.fs, "eog", **monitor_settings)
         self._next = 0  # index of the first sample not yet fed
+        if warm_up is not None:
+            self.monitor.warm_up(*warm_up)
 
     def update(self, t, frame=None):
         end = int(np.searchsorted(self.times, t, side="right"))

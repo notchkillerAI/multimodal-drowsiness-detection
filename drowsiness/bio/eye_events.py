@@ -70,6 +70,12 @@ class BlinkDetector:
     def calibrated(self):
         return self.sigma_cal is not None
 
+    def break_continuity(self):
+        """The next sample does not follow the last one (another recording follows): no step in the changes, no event across the join."""
+        self._prev = None
+        self.recent.clear()
+        self.in_event = False
+
     def process(self, times, activity, flags):
         """One chunk of samples -> (states, confidences), one entry per sample. flags: {"flat", "clipped"} of the chunk."""
         states, confs = [], []
@@ -174,6 +180,13 @@ class EyeEventStream:
         self.trace = deque(maxlen=int(30 * fs / self.k))  # the last 30 s of activity, for plots
         self.signed_trace = deque(maxlen=self.trace.maxlen)  # EOG only: the same seconds as the filtered signal (microvolts)
         self._signed = None
+
+    def break_continuity(self):
+        """Start the filters afresh on the next sample (another recording follows) so the join makes no transient."""
+        for f in (self.bandpass, self.notch, getattr(self, "smooth", None)):
+            if f is not None:
+                f.zi = None
+        self.detector.break_continuity()
 
     def activity(self, uV):
         """Band-passed signal -> how strong the eye activity is (always positive)."""
@@ -281,6 +294,18 @@ class DrowsinessMonitor:
         self.ready_after_s = calibrate_s + window_s + (0 if baseline else baseline_s)
         self._chunks = deque()  # (time of the last sample, mean confidence of the chunk, number of samples)
         self._last_t, self._baseline = None, baseline
+        self._start = 0.0  # session time of the first sample (negative after warm_up)
+
+    def warm_up(self, times, raw):
+        """Feed the end of an EARLIER recording of the same person (at least ready_after_s long) as if the sensor had
+        already been on before the session starts: the detector is ready at session time 0 instead of after
+        ready_after_s. The window still holds that earlier data, so the confidence rises from 0 to full over one
+        window while it is replaced by the session itself. Needs the `baseline` of that person too."""
+        times = np.asarray(times, float)
+        shifted = times - times[-1] - 1.0 / self.stream.fs  # ends just before session time 0
+        self._start = float(shifted[0]) - 1.0 / self.stream.fs  # the start of the first sample: n samples cover n / fs seconds
+        self.update(shifted, raw)
+        self.stream.break_continuity()
 
     def update(self, times, raw):
         """Feed a chunk of raw device values (and their times in seconds); returns the latest output."""
@@ -296,8 +321,8 @@ class DrowsinessMonitor:
     def latest(self, now):
         if self._last_t is None or now - self._last_t > self.max_gap_s:
             return self._output(now, "no data from the sensor")
-        if self._last_t < self.ready_after_s:
-            return self._output(now, f"learning your normal eye activity ({self.ready_after_s - self._last_t:.0f} s left)")
+        if self._last_t - self._start < self.ready_after_s:
+            return self._output(now, f"learning your normal eye activity ({self.ready_after_s - (self._last_t - self._start):.0f} s left)")
 
         det = self.stream.detector
         if self._baseline is None:  # fixed once, from the alert start of the session
@@ -305,6 +330,8 @@ class DrowsinessMonitor:
         now_features = window_features(det.events, self._last_t, self.window_s)
         relative = {k: (v / self._baseline[k] if self._baseline[k] > 0 else 1.0) for k, v in now_features.items()}
         quality, confidence = self._confidence()
+        if self._start < 0:  # warmed up with an earlier recording: trust grows as the session fills the window
+            confidence *= float(np.clip(self._last_t / self.window_s, 0.0, 1.0))
         score = self.model.score(relative) if self.model is not None else 0.0
         return self._output(
             now,

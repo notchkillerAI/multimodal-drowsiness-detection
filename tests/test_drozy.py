@@ -55,3 +55,18 @@ def test_eog_branch_publishes_no_closure_length_and_no_weight_while_learning():
     assert early["confidence"] == 0.0 and "current_closure_s" not in early["raw"]
     late = branch.update(199.0)  # 450 s are needed without a baseline: still learning
     assert late["raw"]["status"].startswith("learning") and late["confidence"] == 0.0
+
+
+def test_warm_up_makes_the_monitor_ready_at_session_start_with_rising_confidence():
+    t, x, _ = synthetic_emg(600, FS, [(0, 15)], 50.0, seed=4)
+    baseline = enrol_baseline(t, x, FS, "emg")
+    model = LinearModel(np.zeros(4), np.ones(4), np.zeros(4), 0.0)
+    m = DrowsinessMonitor(model, FS, "emg", baseline=baseline)
+    n = int(150 * FS)
+    m.warm_up(t[-n:], x[-n:])
+    assert m._last_t < 0  # the earlier data sits before session time 0
+    assert m.latest(0.0)["raw"]["status"] == "ok"
+    early = m.update(t[:FS], x[:FS])  # first second of the session
+    for i in range(FS, 90 * FS, FS):
+        late = m.update(t[i : i + FS], x[i : i + FS])
+    assert early["confidence"] < 0.05 < 0.5 < late["confidence"] <= 1.0  # trust grows as the window fills with the session
