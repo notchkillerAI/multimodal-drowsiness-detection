@@ -106,3 +106,16 @@ def test_real_eog_device_independent():
             m.update(t[i : i + 128], raw[i : i + 128])
         counts.append(len(m.stream.detector.events))
     assert len(set(counts)) == 1
+
+
+@pytest.mark.parametrize("uv_per_count", [4.88, 20.0])
+def test_a_quiet_signal_from_a_coarse_converter_is_not_called_saturated(uv_per_count):
+    """Integer ADC counts toggle between two or three values when the signal is quiet: that is not clipping."""
+    t, x, _ = synthetic_emg(120, FS, [(0, 15)], 50.0, seed=1)
+    raw = np.round(x / uv_per_count) + 512
+    m = DrowsinessMonitor(None, FS, "emg", to_microvolts=uv_per_count, offset=512)
+    flagged = []
+    for i in range(0, len(t), 20):  # 40 ms chunks
+        m.update(t[i : i + 20], raw[i : i + 20])
+        flagged.append(m.stream.detector.last_factors.get("clipped", 1.0) == 0.0)
+    assert np.mean(flagged) < 0.02

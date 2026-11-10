@@ -29,6 +29,7 @@ Z_OFF, END_FRAC = 2.0, 0.3  # it ends when the signal falls below max(Z_OFF, END
 MAX_EVENT_S = 20.0  # an event never lasts longer than this
 MERGE_GAP_S = 0.2  # two events closer than this are one (a burst that dipped and rose again)
 NOISE_WINDOW_S = 60.0  # the median and the noise spread are measured over this long
+CLIP_MIN_STEPS = 8  # a chunk only counts as saturated if it spans this many converter steps (not a quiet, coarsely sampled signal)
 
 
 def robust_sigma(values):
@@ -180,6 +181,7 @@ class EyeEventStream:
         self.trace = deque(maxlen=int(30 * fs / self.k))  # the last 30 s of activity, for plots
         self.signed_trace = deque(maxlen=self.trace.maxlen)  # EOG only: the same seconds as the filtered signal (microvolts)
         self._signed = None
+        self._step = float("inf")  # converter step in microvolts, learnt from the data (for the saturation check)
 
     def break_continuity(self):
         """Start the filters afresh on the next sample (another recording follows) so the join makes no transient."""
@@ -197,10 +199,20 @@ class EyeEventStream:
         y = self.notch(y) if self.notch else y
         return np.maximum(self.smooth(np.abs(y)), 0.0)
 
+    def _at_the_rails(self, uV):
+        """True if many samples of the chunk sit exactly at its highest or lowest value (the amplifier's limits).
+        A quiet signal from a coarse converter also toggles between two or three values, so the chunk must span at
+        least CLIP_MIN_STEPS converter steps (the step is the smallest difference between two values seen so far)."""
+        levels = np.unique(uV)
+        if len(levels) > 1:
+            self._step = min(self._step, float(np.diff(levels).min()))
+        at_extremes = np.mean((uV == levels[-1]) | (uV == levels[0]))
+        return bool(at_extremes > 0.4 and levels[-1] - levels[0] >= CLIP_MIN_STEPS * self._step)
+
     def process(self, times, uV):
         times, uV = np.asarray(times, float), np.asarray(uV, float)
         flat = len(uV) > 1 and float(np.ptp(uV)) == 0.0  # a perfectly flat chunk: electrode off
-        clipped = len(uV) >= 8 and not flat and np.mean((uV == uV.max()) | (uV == uV.min())) > 0.4  # amplifier saturated
+        clipped = len(uV) >= 8 and not flat and self._at_the_rails(uV)  # amplifier saturated
         activity = self.activity(uV)
         keep = np.arange(self._skip, len(activity), self.k)  # keep every k-th sample
         self._skip = (self._skip - len(activity)) % self.k

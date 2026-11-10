@@ -3,7 +3,7 @@ import time
 import numpy as np
 import pytest
 
-from drowsiness.bio.sensors import SerialSource, SimulatedSource, make_source
+from drowsiness.bio.sensors import SerialSource, SimulatedSource, make_source, measure_rate, rate_problem
 
 
 def test_simulated_source_gives_each_sample_once_in_order():
@@ -34,3 +34,15 @@ def test_make_source_rejects_the_simulation_and_unknown_names():
     with pytest.raises(ValueError):
         make_source({"source": "simulated"})
     assert isinstance(make_source({"source": "serial", "port": "loop://", "baudrate": 9600, "sample_rate_hz": 500}), SerialSource)
+
+
+def test_a_wrong_sample_rate_setting_is_reported():
+    assert rate_problem(None, 500) == "" and rate_problem(480, 500) == ""  # unknown yet, or within 5 %
+    assert "450" in rate_problem(450, 500) and "250" in rate_problem(250, 500)
+
+
+def test_measure_rate_counts_what_really_arrives():
+    t = np.arange(0, 10, 1 / 200)  # a 200 Hz device, whatever the settings say
+    measured = measure_rate(SimulatedSource(t, np.zeros_like(t)), seconds=2.5)
+    assert abs(measured - 200) < 20
+    assert "200" in rate_problem(round(measured, -1), 500)

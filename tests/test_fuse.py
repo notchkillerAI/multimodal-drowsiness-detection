@@ -240,3 +240,15 @@ def test_a_confident_branch_seeing_open_eyes_vetoes_every_closure_level():
     f = Fusion(trust={"ear": 0.25, "cnn": 0.25}, smooth_s=0)
     res = f.step(0.0, {"ear": out(0.1, conf=0.9, closure=0.0), "cnn": out(0.9, conf=0.9, closure=7.0)})
     assert res["level"] not in (MICROSLEEP, SLEEP, UNRESPONSIVE)
+
+
+def test_a_trend_branch_far_from_the_cameras_is_not_a_disagreement():
+    """EOG scores the last minutes and reports no closure time: a gap to the cameras must not block the DROWSY verdict."""
+    f = Fusion(trust={"ear": 0.25, "cnn": 0.25, "eog": 0.30}, smooth_s=0, persist_s=3.0)
+    levels, last = [], None
+    for i in range(80):
+        t = i / 10
+        eog = {"score": 0.2, "confidence": 0.9, "timestamp": t, "raw": {}}
+        last = f.step(t, {"ear": out(0.9, 0.9, t), "cnn": out(0.9, 0.9, t), "eog": eog})
+        levels.append(last["level"])
+    assert last["disagreement"] is None and DROWSY in levels  # fused 0.64 stays above 0.6 for 3 s

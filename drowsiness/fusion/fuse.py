@@ -8,9 +8,10 @@
                           durations of Euro NCAP (Driver Engagement protocol v1.2, section 1.3): MICROSLEEP from 1 s,
                           SLEEP from 3 s, UNRESPONSIVE from 6 s; each level is more urgent than the one before
     6. levels             ALERT / EARLY WARNING / DROWSY / MICROSLEEP / SLEEP / UNRESPONSIVE  (+ SENSORS UNRELIABLE instead of a guess)
-    7. disagreement       two confident branches that disagree (scores 0.4 apart, or one sees a closure of 1 s while the
-                          other sees open eyes) are not averaged into a verdict: no new DROWSY from the average while they
-                          disagree, the fused confidence is halved and the reason says so
+    7. disagreement       two confident eye-state branches (the cameras) that disagree (scores 0.4 apart, or one sees a closure
+                          of 1 s while the other sees open eyes) are not averaged into a verdict: no new DROWSY from the average
+                          while they disagree, the fused confidence is halved and the reason says so. Trend branches (EOG, EEG)
+                          are not part of this comparison
     8. minimum dwell      a level change must last `min_dwell_s` (0.3 s) before it is shown, so one-frame blips do not
                           flash on the screen (the closure levels and "sensors unreliable" are always shown at once)
     9. recovery           once the eyes are open again the red alarm ends after `alert_hold_s` (2.5 s), a yellow
@@ -258,19 +259,25 @@ class Fusion:
         }
 
     def _disagreement(self, branches):
-        """Text describing how confident branches disagree, or "" if they agree (or fewer than two are confident)."""
-        sure = {n: b for n, b in branches.items() if b["status"] == "ok" and b["confidence"] >= MIN_BRANCH_CONF}
+        """Text describing how confident branches disagree, or "" if they agree (or fewer than two are confident).
+        Only branches that watch the eye state itself (they report `current_closure_s`: the cameras) are compared. A trend
+        branch such as EOG or EEG scores the last minutes, not what the eyes do now, so a gap between it and a camera is
+        expected and is no contradiction (on DROZY, counting EOG raised the share of "disagreeing" frames from 16 % to 28 %)."""
+        sure = {
+            n: b
+            for n, b in branches.items()
+            if b["status"] == "ok" and b["confidence"] >= MIN_BRANCH_CONF and "current_closure_s" in b["raw"]
+        }
         if len(sure) < 2:
             return ""
         scores = {n: b["score"] for n, b in sure.items()}
         lo, hi = min(scores, key=scores.get), max(scores, key=scores.get)
         if scores[hi] - scores[lo] >= self.disagree_gap:
             return f"{hi} score {scores[hi]:.2f} vs {lo} {scores[lo]:.2f}"
-        closed = {n: b["raw"]["current_closure_s"] for n, b in sure.items() if "current_closure_s" in b["raw"]}
-        if closed:
-            longest, shortest = max(closed, key=closed.get), min(closed, key=closed.get)
-            if closed[longest] >= MICROSLEEP_DURATION and closed[shortest] < 0.5:
-                return f"{longest} sees eyes closed {closed[longest]:.1f} s, {shortest} sees them open"
+        closed = {n: b["raw"]["current_closure_s"] for n, b in sure.items()}
+        longest, shortest = max(closed, key=closed.get), min(closed, key=closed.get)
+        if closed[longest] >= MICROSLEEP_DURATION and closed[shortest] < 0.5:
+            return f"{longest} sees eyes closed {closed[longest]:.1f} s, {shortest} sees them open"
         return ""
 
     @staticmethod

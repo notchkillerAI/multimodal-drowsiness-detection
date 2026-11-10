@@ -12,6 +12,35 @@ import time
 import numpy as np
 
 EMPTY = (np.empty(0), np.empty(0))
+RATE_CHECK_AFTER_S = 10.0  # the real sample rate is judged once this much has been received
+RATE_TOLERANCE = 0.05  # and may differ from the configured one by this share
+
+
+def rate_problem(measured_fs, configured_fs, tolerance=RATE_TOLERANCE):
+    """Text if the device does not deliver the configured sample rate ("" if it does, or if it is not known yet).
+    The filters and every duration are computed from the configured rate, so a wrong setting silently shifts both."""
+    if measured_fs is None or abs(measured_fs - configured_fs) <= tolerance * configured_fs:
+        return ""
+    return (
+        f"the sensor delivers about {measured_fs:.0f} samples per second, but sample_rate_hz is set to {configured_fs:.0f}: "
+        f"set it to {measured_fs:.0f} (filters and durations are computed from this number)"
+    )
+
+
+def measure_rate(source, seconds=5.0):
+    """Open a source for a few seconds and return how many samples per second really arrive (None if nothing arrives)."""
+    source.start()
+    try:
+        started, n, first, last = time.time(), 0, None, None
+        while time.time() - started < seconds:
+            times, _ = source.read(time.time() - started)
+            if len(times):
+                n, last = n + len(times), time.time()
+                first = last if first is None else first
+            time.sleep(0.02)
+    finally:
+        source.stop()
+    return None if first is None or last - first < 1.0 else n / (last - first)
 
 
 class SimulatedSource:
@@ -41,6 +70,8 @@ class SerialSource:
     def __init__(self, port, baudrate, fs):
         self.port, self.baudrate, self.fs = port, baudrate, fs
         self._rows, self._stopped, self._count = [], False, 0
+        self._lock = threading.Lock()  # the reader thread appends while read() takes the list away
+        self._received, self._first_at, self._last_at, self._warned = 0, None, None, False
 
     def start(self):
         import serial  # pyserial; the port "loop://" is a test loopback
@@ -61,11 +92,26 @@ class SerialSource:
             if abs(now - nominal) > 1.0:
                 self._count = int(now * self.fs)
                 nominal = self._count / self.fs
-            self._rows.append((nominal, value))
+            with self._lock:
+                self._rows.append((nominal, value))
+                self._received, self._last_at = self._received + 1, now
+                self._first_at = now if self._first_at is None else self._first_at
             self._count += 1
 
+    @property
+    def measured_fs(self):
+        """Samples per second that really arrived (None until RATE_CHECK_AFTER_S seconds have been received)."""
+        with self._lock:
+            if self._first_at is None or self._last_at - self._first_at < RATE_CHECK_AFTER_S:
+                return None
+            return (self._received - 1) / (self._last_at - self._first_at)
+
     def read(self, now=None):
-        rows, self._rows = self._rows, []
+        with self._lock:
+            rows, self._rows = self._rows, []
+        if not self._warned and (problem := rate_problem(self.measured_fs, self.fs)):
+            self._warned = True
+            print("WARNING:", problem)
         return (np.array([r[0] for r in rows]), np.array([r[1] for r in rows])) if rows else EMPTY
 
     def stop(self):

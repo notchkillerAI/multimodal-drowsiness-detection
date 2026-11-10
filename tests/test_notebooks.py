@@ -38,3 +38,17 @@ def test_notebook_runs_without_errors(name):
             for old, new in CAMERA_CELLS.items():
                 cell.source = cell.source.replace(old, new)
     ExecutePreprocessor(timeout=1800, kernel_name="python3").preprocess(nb, {"metadata": {"path": ROOT}})
+
+
+@pytest.mark.parametrize("name", NOTEBOOKS)
+def test_saved_notebook_holds_no_face_pictures(name):
+    """Fast check of the files as they are saved: camera frames (JPEG) are never kept, and the cells tagged "shows-face"
+    (a photo, a camera or video replay, the DROZY replay) keep no picture. Clear those outputs before committing."""
+    nb = nbformat.read(os.path.join(ROOT, f"{name}.ipynb"), as_version=4)
+    for number, cell in enumerate(nb.cells):
+        if cell.cell_type != "code":
+            continue
+        kinds = {kind for output in cell.get("outputs", []) for kind in output.get("data", {})}
+        assert "image/jpeg" not in kinds, f"{name}: cell {number} keeps a camera frame"
+        if "shows-face" in cell.metadata.get("tags", []):
+            assert not any(k.startswith("image/") for k in kinds), f"{name}: cell {number} is tagged shows-face but keeps a picture"
