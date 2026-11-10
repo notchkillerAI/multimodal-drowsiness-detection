@@ -4,6 +4,7 @@ import pytest
 from drowsiness.bio.eog_branch import EogBranch
 from drowsiness.bio.eye_events import DrowsinessMonitor, LinearModel, enrol_baseline
 from drowsiness.bio.synthetic import synthetic_emg
+from drowsiness.fusion import drozy_eval as evaluation
 from drowsiness.fusion.drozy_replay import kss_word, lapses, pvt_reactions
 from drowsiness.video.zoom import FaceZoom
 
@@ -70,3 +71,57 @@ def test_warm_up_makes_the_monitor_ready_at_session_start_with_rising_confidence
     for i in range(FS, 90 * FS, FS):
         late = m.update(t[i : i + FS], x[i : i + FS])
     assert early["confidence"] < 0.05 < 0.5 < late["confidence"] <= 1.0  # trust grows as the window fills with the session
+
+
+# ---------------------------------------------------------------- evaluation on saved branch outputs (drozy_eval)
+def make_cache(subject, test, kss, ear, cnn, eog, seconds=60, fps=10):
+    """A fake extracted test: constant branch scores, full confidence, eyes open (the EOG has no closure time)."""
+    n = seconds * fps
+    cache = {"t": np.arange(n) / fps, "subject": subject, "test": test, "kss": kss}
+    for name, score in (("ear", ear), ("cnn", cnn), ("eog", eog)):
+        cache[f"{name}_score"], cache[f"{name}_conf"] = np.full(n, score), np.ones(n)
+        cache[f"{name}_closure"] = np.full(n, np.nan if name == "eog" else 0.0)
+    return cache
+
+
+def test_auc_and_tie_aware_rank_correlation():
+    from scipy.stats import spearmanr
+
+    score, kss = np.array([0.1, 0.2, 0.2, 0.6, 0.9, 0.4]), np.array([2, 3, 3, 7, 9, 7])
+    assert evaluation.auc(score, kss >= 7) == 1.0 and evaluation.auc(-score, kss >= 7) == 0.0
+    assert evaluation.auc(np.array([0.5, 0.5]), np.array([True, False])) == 0.5  # a tie counts half
+    assert evaluation.spearman(score, kss) == pytest.approx(spearmanr(score, kss)[0])  # KSS has ties: mean ranks
+
+
+def test_weight_grid_has_every_mix_once():
+    grid = evaluation.weight_grid()
+    assert all(abs(sum(w.values()) - 1) < 1e-3 for w in grid)
+    assert len({tuple(w.values()) for w in grid}) == len(grid)
+    assert {"ear": 1.0, "cnn": 0.0, "eog": 0.0} in grid and {"ear": 0.0, "cnn": 0.0, "eog": 1.0} in grid
+
+
+def test_offline_fusion_and_votes_on_saved_outputs():
+    drowsy, alert = make_cache(1, 1, 8, 0.9, 0.8, 0.9), make_cache(1, 2, 2, 0.1, 0.1, 0.2)
+    row_d, row_a = evaluation.summarise(drowsy), evaluation.summarise(alert)
+    assert row_d["alarm_share"] > 0 and row_d["fused_mean"] > 0.8  # DROWSY is shown (then the recovery rule ends the red alarm)
+    assert row_a["alert_share"] == 1.0 and row_a["fused_mean"] < 0.2
+    assert row_d["majority_share"] == 1.0 and row_a["majority_share"] == 0.0
+    assert row_d["ear_mean"] == pytest.approx(0.9) and row_d["eog_mean"] == pytest.approx(0.9)
+    split = make_cache(1, 3, 5, 0.9, 0.1, 0.1)  # one branch of three votes drowsy: no majority
+    assert evaluation.majority_share(split) == 0.0
+    assert evaluation.weighted_mean_score(split, {"ear": 0.5, "cnn": 0.5, "eog": 0.0}) == pytest.approx(0.5)
+
+
+def test_weights_are_tuned_on_the_other_people_only():
+    """Only the EOG tells sleepy from alert in this fake data, so the weights chosen for every held-out person favour it."""
+    rng = np.random.default_rng(0)
+    caches = []
+    for person in range(1, 7):
+        for test, kss in ((1, 2), (2, 8)):
+            caches.append(make_cache(person, test, kss, rng.uniform(0.2, 0.8), rng.uniform(0.2, 0.8), 0.8 if kss >= 7 else 0.2))
+    held_out, chosen, best, best_auc = evaluation.tune_weights(caches)
+    kss = np.array([c["kss"] for c in caches])
+    assert all(w["eog"] >= max(w["ear"], w["cnn"]) for w in chosen.values()) and best_auc == 1.0
+    assert evaluation.auc(held_out, kss >= 7) == 1.0
+    subjects = np.array([c["subject"] for c in caches])
+    assert evaluation.test_level_decision(held_out, kss, subjects) == (6, 0, 0, 6)  # tp, fn, fp, tn

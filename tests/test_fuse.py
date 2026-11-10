@@ -252,3 +252,13 @@ def test_a_trend_branch_far_from_the_cameras_is_not_a_disagreement():
         last = f.step(t, {"ear": out(0.9, 0.9, t), "cnn": out(0.9, 0.9, t), "eog": eog})
         levels.append(last["level"])
     assert last["disagreement"] is None and DROWSY in levels  # fused 0.64 stays above 0.6 for 3 s
+
+
+def test_a_score_that_stays_high_after_recovery_is_green_by_default_and_yellow_with_the_option():
+    scores = {"ear": 0.9, "cnn": 0.9}
+    quiet = run(Fusion(trust={"ear": 0.25, "cnn": 0.25}), 60, scores)  # eyes open, score high the whole time
+    assert DROWSY in quiet and quiet[200:].count(ALERT) > 100  # red once, then mostly green although the score is 0.9
+    warned = Fusion(trust={"ear": 0.25, "cnn": 0.25}, warn_while_suppressed=True)
+    levels = run(warned, 60, scores)
+    assert DROWSY in levels and ALERT not in levels[50:]  # after the red alarm it stays yellow, never green
+    assert run(warned, 20, {"ear": 0.1, "cnn": 0.1}, start=60)[-1] == ALERT  # and clears when the score really falls
