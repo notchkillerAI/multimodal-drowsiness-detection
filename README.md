@@ -43,8 +43,8 @@ and prints the measured processing time.
 
 Pre-recorded demo on DROZY (face video + EOG + labels, see below), EAR + CNN + EOG fused, paced like the recording:
 ```bash
-.venv/bin/python -m drowsiness.fusion.drozy_replay --subject 4 --test 3 --start 150       # window, q quits
-.venv/bin/python -m drowsiness.fusion.drozy_replay --subject 4 --test 3 --start 150 --browser   # same picture at http://localhost:8765 (if no window opens)
+.venv/bin/python -m drowsiness.fusion.drozy_replay --subject 4 --test 3       # window, q quits
+.venv/bin/python -m drowsiness.fusion.drozy_replay --subject 4 --test 3 --browser   # same picture at http://localhost:8765 (if no window opens)
 .venv/bin/python -m drowsiness.fusion.drozy_replay --subject 4 --test 3 --no-show --save runs/s4t3.mp4 --log runs/s4t3.csv
 ```
 The dashboard shows the video with the eye points, the fused level, the three branches (score, confidence), the score history,
@@ -116,24 +116,34 @@ The EU rule for drowsiness warnings (Delegated Regulation 2021/1341, Annex I Par
 * **DROZY replay (EAR + CNN + EOG fused)**: 14 people, three 10-minute tests each, near-infrared video and EEG/EOG, label = the person's own KSS rating per test (not a continuous label).
   The faces are small (eyes about 12 px), so the replay crops and enlarges the face (`video/zoom.py`); this brings the face to the size the models expect but adds no detail.
   The EOG model was trained on a different dataset (DD-Database) and a different electrode pair and is used here without any retraining.
-  **EOG alone, all 36 tests** (mean score of a test vs the person's KSS): Spearman 0.41 (p = 0.012), AUC 0.71 for KSS 7 or more vs 6 or less (15 vs 21 tests). A moderate trend, 36 points, not a result to quote as accuracy.
+  **EOG alone, all 36 tests** (mean score of a test vs the person's KSS): Spearman 0.38, AUC 0.70 [0.46, 0.91] for KSS 7 or more vs 6 or less (15 vs 21 tests). A moderate trend, 36 points, not a result to quote as accuracy.
   The person's normal blink pattern for tests 2 and 3 comes from that person's earlier test (an alert recording made before, like a calibration drive), and the EOG detector is **warmed up** with the last 2.5 minutes of that test, so it is ready from the first second; its confidence rises from 0 to full over the first 2 minutes while the window fills with the test itself (the first minutes lean on the earlier test). Test 1 of a person has no earlier test: it learns from its own first 5 minutes and scores only after 7.5 minutes.
-  On the 22 tests that have an earlier test, the warm start gives the same EOG-only AUC as the 150 s cold start (0.74 against 0.74; Spearman 0.39 against 0.44), and the EOG has a usable confidence (above 0.3) after about 42 s instead of 150 s. **The 36-test table below was run before the warm start**, with the EOG ready at 150 s; the fused numbers have not been re-run.
-  **All 36 tests replayed in full** (`python -m drowsiness.fusion.drozy_eval`; nothing tuned on them; per-test table and plot in `docs/drozy_results.png`).
-  One number per test, then the AUC for KSS 7 or more (15 tests) against 6 or less (21 tests) and the Spearman correlation with KSS:
+  On the 22 tests that have an earlier test, the warm start gives the same EOG-only AUC as the 150 s cold start (0.74 against 0.74; Spearman 0.39 against 0.44), and the EOG has a usable confidence (above 0.3) after about 42 s instead of 150 s.
+  **All 36 tests replayed in full, with the warm start** (`python -m drowsiness.fusion.drozy_eval`; per-test table and plot in `docs/drozy_results.png`).
+  The slow part (video through EAR and CNN, EOG through its detector) runs once and saves what each branch said per frame in `runs/drozy/`; fusion is then re-run on the saved outputs in seconds (`--report-only`), which is what makes weight tuning possible.
+  One number per test, then the AUC for KSS 7 or more (15 tests) against 6 or less (21 tests) with a 95 % interval from resampling **people** (not tests, because one person's tests are not independent), and the Spearman correlation with KSS (tie-aware):
 
-  | measure | AUC | Spearman |
+  | measure | AUC [95 % interval] | Spearman |
   |---|---|---|
-  | EAR alone | 0.74 | +0.54 |
-  | CNN alone | 0.80 | +0.68 |
-  | EOG alone | 0.71 | +0.37 |
-  | **fused score** | 0.79 | +0.59 |
-  | share of time in DROWSY or worse | 0.80 | +0.55 |
+  | EAR alone | 0.74 [0.54, 0.96] | +0.52 |
+  | CNN alone | 0.80 [0.61, 0.93] | +0.66 |
+  | EOG alone | 0.70 [0.46, 0.91] | +0.38 |
+  | majority vote (share of time 2 of 3 branches say drowsy) | 0.79 [0.66, 0.92] | +0.61 |
+  | **weighted fusion, default weights** | 0.79 [0.63, 0.96] | +0.59 |
+  | weighted fusion, weights tuned on the other 13 people | 0.78 [0.60, 0.93] | +0.65 |
+  | share of time in DROWSY or worse | 0.80 [0.67, 0.95] | +0.61 |
 
-  Time in each level: tests with KSS 6 or less spend 83 % of the time in ALERT and 0 % in DROWSY or worse; tests with KSS 7 or more spend 42 % in ALERT and 14 % in DROWSY or worse.
+  Time in each level: tests with KSS 6 or less spend 84 % of the time in ALERT and 0 % in DROWSY or worse; tests with KSS 7 or more spend 42 % in ALERT and 14 % in DROWSY or worse.
   What this says, plainly:
-  * The fused score **does not beat the best single branch** (CNN alone, 0.80 against 0.79). With 36 tests the difference is noise, so fusion is not shown to help on this data; the reasons for it are robustness (a lost camera or electrode) and the microsleep rules, which this label cannot test.
-  * **Misses:** 5 of the 15 sleepy tests stay mostly ALERT (5-2, 5-3, 10-3, 14-2, 14-3), two of them (5-3, 14-2) for 100 % of the time. **False warnings:** the alert test 6-2 spends 80 % of the time in EARLY WARNING.
+  * **Every interval overlaps every other.** With 14 people, no method is shown to be better than another: not fusion against the best single branch (CNN, 0.80), not weighted fusion against a simple majority vote (0.79 both).
+    The reasons for fusion are robustness (a lost camera or electrode) and the microsleep rules, which this label cannot test.
+  * **Tuning the weights did not help.** Leaving one person out and choosing the weights on the other 13 picked "CNN 0.8, EOG 0.2, EAR 0" in 13 of 14 folds, and on the held-out people it scores 0.78, no better than the default weights (0.79).
+    The same mix scores 0.85 when chosen and tested on the same data, which is the optimistic number that must not be quoted. The default weights are kept.
+  * **As a yes/no per test** (mean fused score against a cut-off chosen on the other people): 9 of 15 sleepy tests found, 16 of 21 not-sleepy tests cleared (5 false alarms).
+  * **Misses:** 5 of the 15 sleepy tests stay mostly ALERT (5-2, 5-3, 10-3, 14-2, 14-3), two of them (5-3, 14-2) for 100 % of the time. **False warnings:** the alert test 6-2 spends 81 % of the time in EARLY WARNING.
+  * **Green while the score is high.** After a recovery the score rules are switched off for 30 s, so the display can show ALERT while the fused score is still above 0.6. On the sleepy tests this is 2.5 % of the time on average (16 % in the worst test); on the others 0.3 %.
+    The option `Fusion(warn_while_suppressed=True)` shows EARLY WARNING instead (0 % green with a high score; ALERT time on sleepy tests 42 % to 38 %, on the others 84 % to 83 %). It is off by default.
+  * The disagreement rule compares only the two camera branches (the EOG is a 2-minute trend and is expected to differ from them for a while).
   * One self-rating per 10-minute test is a coarse label (a person can be sleepy and still keep their eyes open), the faces are small near-infrared pictures, and the EOG model comes from another dataset. This is a first honest measurement, not a result to present as accuracy.
   The EOG branch cannot trigger a microsleep (an eye *event* is not an eye *closure*). EEG is not used yet.
 * Everything is tested on a few people at most (the camera video is a single person). The branches have not been compared against a ground truth of real drowsy driving.
