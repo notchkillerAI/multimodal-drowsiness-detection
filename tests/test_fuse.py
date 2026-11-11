@@ -137,21 +137,24 @@ def level_at(steps, t):
     return min(steps, key=lambda s: abs(s[0] - t))[1]
 
 
-def test_alarm_ends_after_the_eyes_are_open_again_then_yellow_then_alert():
+def test_alarm_ends_after_the_eyes_are_open_again_then_yellow_while_the_score_is_high():
     steps = recover_run(alert_hold_s=2.5, break_s=8.0, suppress_s=30.0)
     assert level_at(steps, 2.0) == MICROSLEEP
     assert level_at(steps, 4.0) == DROWSY  # eyes open since 3.0 s: the red message holds for a moment ...
     assert level_at(steps, 6.0) == EARLY_WARNING  # ... then the yellow "take a break" level (from 5.5 s)
     assert level_at(steps, 13.0) == EARLY_WARNING
-    assert level_at(steps, 14.5) == ALERT  # yellow lasts 8 s, then it stops
-    # the old high scores must not restart the alarm during the 30 s after the recovery
-    assert all(level == ALERT for t, level in steps if 14 <= t <= 35)
+    # the score is still 0.9, so the display stays yellow (never green with a high score), but the old high scores
+    # must not restart the red alarm during the 30 s after the recovery
+    assert all(level == EARLY_WARNING for t, level in steps if 14 <= t <= 35)
+    quiet = recover_run(alert_hold_s=2.5, break_s=8.0, suppress_s=30.0, warn_while_suppressed=False)
+    assert level_at(quiet, 13.0) == EARLY_WARNING and level_at(quiet, 14.5) == ALERT  # option off: yellow lasts 8 s, then green
+    assert all(level == ALERT for t, level in quiet if 14 <= t <= 35)
 
 
 def test_new_long_closure_after_recovery_alarms_again_at_once():
     f = Fusion(trust={"ear": 1.0}, smooth_s=0, persist_s=3.0)
     steps = run_steps(f, 3, 0.9, 2.5, 0) + run_steps(f, 12, 0.9, 0.0, 3)  # microsleep, recovered, in the yellow / alert phase
-    assert steps[-1][1] == ALERT
+    assert steps[-1][1] == EARLY_WARNING  # red is over; yellow because the score is still high
     again = run_steps(f, 1, 0.9, 1.2, 15)  # a new closure of 1.2 s is a microsleep: shown at once, old scores or not
     assert again[0][1] == MICROSLEEP
 
@@ -254,11 +257,11 @@ def test_a_trend_branch_far_from_the_cameras_is_not_a_disagreement():
     assert last["disagreement"] is None and DROWSY in levels  # fused 0.64 stays above 0.6 for 3 s
 
 
-def test_a_score_that_stays_high_after_recovery_is_green_by_default_and_yellow_with_the_option():
+def test_a_score_that_stays_high_after_recovery_is_yellow_by_default_and_green_with_the_option_off():
     scores = {"ear": 0.9, "cnn": 0.9}
-    quiet = run(Fusion(trust={"ear": 0.25, "cnn": 0.25}), 60, scores)  # eyes open, score high the whole time
+    quiet = run(Fusion(trust={"ear": 0.25, "cnn": 0.25}, warn_while_suppressed=False), 60, scores)  # eyes open, score high the whole time
     assert DROWSY in quiet and quiet[200:].count(ALERT) > 100  # red once, then mostly green although the score is 0.9
-    warned = Fusion(trust={"ear": 0.25, "cnn": 0.25}, warn_while_suppressed=True)
+    warned = Fusion(trust={"ear": 0.25, "cnn": 0.25})  # the default
     levels = run(warned, 60, scores)
     assert DROWSY in levels and ALERT not in levels[50:]  # after the red alarm it stays yellow, never green
     assert run(warned, 20, {"ear": 0.1, "cnn": 0.1}, start=60)[-1] == ALERT  # and clears when the score really falls

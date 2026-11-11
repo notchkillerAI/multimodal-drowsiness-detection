@@ -15,9 +15,11 @@
     8. minimum dwell      a level change must last `min_dwell_s` (0.3 s) before it is shown, so one-frame blips do not
                           flash on the screen (the closure levels and "sensors unreliable" are always shown at once)
     9. recovery           once the eyes are open again the red alarm ends after `alert_hold_s` (2.5 s), a yellow
-                          "take a break" level follows for `break_s` (8 s), then ALERT. The branch scores still remember the
-                          last 30 s, so the score rules stay switched off for `suppress_s` (30 s) after the recovery,
+                          "take a break" level follows for `break_s` (8 s). The branch scores still remember the
+                          last 30 s, so the red score rule stays switched off for `suppress_s` (30 s) after the recovery,
                           unless a new eye closure of 1 s or more (a microsleep) shows up: old data must not restart the alarm.
+                          During that time the display is yellow while the score is still high and green once it has
+                          fallen (`warn_while_suppressed`, on by default).
 
 A branch that is switched off is simply left out of `outputs`; EOG and EEG plug in the same way as the video branches.
 """
@@ -85,7 +87,7 @@ class Fusion:
         suppress_s=30.0,
         disagree_gap=0.4,
         min_dwell_s=0.3,
-        warn_while_suppressed=False,
+        warn_while_suppressed=True,
     ):
         self.trust = dict(DEFAULT_TRUST if trust is None else trust)
         self.smooth_s, self.min_usable_weight, self.max_age_s, self.hold_s = smooth_s, min_usable_weight, max_age_s, hold_s
@@ -94,7 +96,8 @@ class Fusion:
         self.disagree_gap, self.min_dwell_s = disagree_gap, min_dwell_s
         # After a recovery the red alarm is switched off for suppress_s. With this option the yellow warning still follows
         # the score during that time, so a score that STAYS high (a driver who keeps nodding off with open eyes) is not
-        # shown as green. Off by default: the display then goes quiet after the yellow break, as first specified.
+        # shown as green. On by default (DROZY, 36 tests: green-with-a-high-score 2.5 % -> 0 % of the time on sleepy tests, for
+        # 1 % less green on the others). False gives the first behaviour: green straight after the 8 s yellow break.
         self.warn_while_suppressed = warn_while_suppressed
         self.warn = Hysteresis(warn_on, warn_off)
         self.drowsy = False

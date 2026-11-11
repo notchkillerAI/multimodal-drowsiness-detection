@@ -4,7 +4,7 @@ Real-time system that combines several independent "branches" into one drowsines
 `{score, confidence, raw, timestamp}` (score 0 = alert, 1 = drowsy; confidence 0-1 drops when the sensor cannot be trusted),
 and a fusion step combines them with smoothing, hysteresis and persistence into
 **ALERT / EARLY WARNING / DROWSY / MICROSLEEP** (or *sensors unreliable* instead of a guess).
-When the driver wakes up the red alarm ends 2.5 s after the eyes are open again, a yellow "take a break" level follows for 8 s, then ALERT (all three times are settings).
+When the driver wakes up the red alarm ends 2.5 s after the eyes are open again, a yellow "take a break" level follows for 8 s and stays while the score is still high, then ALERT (all three times are settings).
 
 ```
 camera ──► EAR branch  (landmarks, eye aspect ratio) ─┐
@@ -142,7 +142,7 @@ The EU rule for drowsiness warnings (Delegated Regulation 2021/1341, Annex I Par
   * **As a yes/no per test** (mean fused score against a cut-off chosen on the other people): 9 of 15 sleepy tests found, 16 of 21 not-sleepy tests cleared (5 false alarms).
   * **Misses:** 5 of the 15 sleepy tests stay mostly ALERT (5-2, 5-3, 10-3, 14-2, 14-3), two of them (5-3, 14-2) for 100 % of the time. **False warnings:** the alert test 6-2 spends 81 % of the time in EARLY WARNING.
   * **Green while the score is high.** After a recovery the score rules are switched off for 30 s, so the display can show ALERT while the fused score is still above 0.6. On the sleepy tests this is 2.5 % of the time on average (16 % in the worst test); on the others 0.3 %.
-    The option `Fusion(warn_while_suppressed=True)` shows EARLY WARNING instead (0 % green with a high score; ALERT time on sleepy tests 42 % to 38 %, on the others 84 % to 83 %). It is off by default.
+    `Fusion(warn_while_suppressed=True)`, now the default, shows EARLY WARNING instead (0 % green with a high score; ALERT time on sleepy tests 42 % to 38 %, on the others 84 % to 83 %). The table above was made with the option off; it only changes the yellow level, not the scores or the red alarm. After a microsleep the display therefore stays yellow until the score has really fallen (up to about 30 s) instead of turning green after 8 s.
   * The disagreement rule compares only the two camera branches (the EOG is a 2-minute trend and is expected to differ from them for a while).
   * One self-rating per 10-minute test is a coarse label (a person can be sleepy and still keep their eyes open), the faces are small near-infrared pictures, and the EOG model comes from another dataset. This is a first honest measurement, not a result to present as accuracy.
   The EOG branch cannot trigger a microsleep (an eye *event* is not an eye *closure*). EEG is not used yet.
