@@ -32,19 +32,19 @@ def test_notebook_runs_without_errors(name):
     missing = [p for p in NEEDS_DATA if not os.path.exists(os.path.join(ROOT, p))]
     if missing:
         pytest.skip(f"missing local files: {missing}")
-    nb = nbformat.read(os.path.join(ROOT, f"{name}.ipynb"), as_version=4)
+    nb = nbformat.read(os.path.join(ROOT, "notebooks", f"{name}.ipynb"), as_version=4)
     for cell in nb.cells:
         if cell.cell_type == "code":
             for old, new in CAMERA_CELLS.items():
                 cell.source = cell.source.replace(old, new)
-    ExecutePreprocessor(timeout=1800, kernel_name="python3").preprocess(nb, {"metadata": {"path": ROOT}})
+    ExecutePreprocessor(timeout=1800, kernel_name="python3").preprocess(nb, {"metadata": {"path": os.path.join(ROOT, "notebooks")}})
 
 
 @pytest.mark.parametrize("name", NOTEBOOKS)
 def test_saved_notebook_holds_no_face_pictures(name):
     """Fast check of the files as they are saved: camera frames (JPEG) are never kept, and the cells tagged "shows-face"
     (a photo, a camera or video replay, the DROZY replay) keep no picture. Clear those outputs before committing."""
-    nb = nbformat.read(os.path.join(ROOT, f"{name}.ipynb"), as_version=4)
+    nb = nbformat.read(os.path.join(ROOT, "notebooks", f"{name}.ipynb"), as_version=4)
     for number, cell in enumerate(nb.cells):
         if cell.cell_type != "code":
             continue

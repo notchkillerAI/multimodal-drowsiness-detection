@@ -1,4 +1,5 @@
 import json
+import os
 import urllib.error
 import urllib.request
 
@@ -9,6 +10,11 @@ import pytest
 from drowsiness.common.branch import Branch
 from drowsiness.dashboard.server import Dashboard
 from drowsiness.dashboard.session import Session, plain
+
+MODELS = ("models/eye_state.onnx", "models/face_detection_yunet_2023mar.onnx", "shape_predictor_68_face_landmarks.dat")
+pytestmark = pytest.mark.skipif(
+    not all(os.path.exists(m) for m in MODELS), reason="needs the model files (download_models.py and the trained eye model)"
+)
 
 
 class Clock:

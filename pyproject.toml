@@ -1,3 +1,23 @@
+[project]
+name = "driver-drowsiness"
+version = "0.1.0"
+description = "Real-time multimodal driver-drowsiness detection: EAR, eye-state CNN and EOG branches with confidence-weighted fusion"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.12"
+authors = [{ name = "Arpan Bhattacharya" }]
+# The pinned, tested versions are in requirements.txt (install with: pip install -r requirements-dev.txt)
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["drowsiness*"]
+
+[tool.setuptools.package-data]
+"drowsiness.dashboard" = ["static/*"]
+
 [tool.ruff]
 line-length = 140
 target-version = "py312"

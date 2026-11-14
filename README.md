@@ -1,5 +1,12 @@
 # Multimodal driver-drowsiness detection
 
+![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue) ![License: MIT](https://img.shields.io/badge/license-MIT-green) ![Tests: pytest](https://img.shields.io/badge/tests-pytest-informational) ![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-black)
+
+**Contents:** [What it does](#what-it-does) · [Setup](#setup-macos-apple-silicon) · [Run](#run) · [Layout](#layout) · [Tests](#tests-and-code-style) ·
+[Warning rules](#warning-timings-and-the-industry-rules) · [Results and limits](#what-has-been-measured-and-what-has-not) · [Data and models](#data-and-models) · [Licence](#licence)
+
+## What it does
+
 Real-time system that combines several independent "branches" into one drowsiness level. Each branch turns its own sensor into the same output,
 `{score, confidence, raw, timestamp}` (score 0 = alert, 1 = drowsy; confidence 0-1 drops when the sensor cannot be trusted),
 and a fusion step combines them with smoothing, hysteresis and persistence into
@@ -19,7 +26,12 @@ EEG (planned)                                         ┘
 | CNN eye state | webcam / video | `drowsiness/video/cnn_branch.py` | working, live and recorded |
 | EOG / EMG | eye electrodes (recording or live sensor) | `drowsiness/bio/eye_events.py` | working on the DD-Database recordings; EMG only tested on simulated signals |
 | EEG | electrodes | `drowsiness/bio/eeg_branch.py` | placeholder |
-| Fusion | all of the above | `drowsiness/fusion/fuse.py` | working for EAR + CNN; EOG/EMG not yet plugged in |
+| Fusion | all of the above | `drowsiness/fusion/fuse.py` | working: EAR + CNN live, EAR + CNN + EOG on recordings (DROZY) |
+| Dashboard | camera in the browser | `drowsiness/dashboard/` | working for the camera branches; a place is reserved for the EOG device |
+
+![Mean score of each DROZY test against the person's own sleepiness rating, for each branch and the fused score](docs/drozy_results.png)
+
+*All 36 DROZY tests replayed: one point per test, red = the person rated themselves sleepy (KSS 7 or more). Fusion is not shown to beat the best single branch on this data; the numbers, their intervals and the limits are in [Results and limits](#what-has-been-measured-and-what-has-not).*
 
 ## Setup (macOS, Apple Silicon)
 
@@ -27,6 +39,19 @@ EEG (planned)                                         ┘
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt     # runtime + tests + lint (dlib builds from source, about 3 minutes)
 .venv/bin/python download_models.py               # face detector and landmark model into models/ and the project root
+```
+The same steps are in the `Makefile` (`make setup`, `make models`, `make test`, `make lint`, `make dashboard`; `make help` lists them).
+
+**The eye-state model of the CNN branch is trained here and is not in git** (`models/eye_state.onnx`). To build it (downloads the MRL Eye dataset, about 10 minutes of training):
+```bash
+.venv/bin/pip install -r requirements-train.txt
+.venv/bin/python train_eye_model.py train small 80 14      # writes models/eye_state_small_80.onnx
+cp models/eye_state_small_80.onnx models/eye_state.onnx      # the file the CNN branch loads
+```
+Without it the EAR branch, the EOG branch and the fusion still run; the dashboard shows the CNN branch as not available.
+In Jupyter or VS Code the environment appears as the kernel **Driver Drowsiness (.venv)** after
+```bash
+.venv/bin/python -m ipykernel install --user --name driver-venv --display-name "Driver Drowsiness (.venv)"
 ```
 The camera needs permission for the app you run it from (Terminal, VS Code ...): System Settings > Privacy & Security > Camera.
 Test pictures and videos (`data/test2.jpg`, `data/test_vid_1.mov`) are your own and are not in git.
@@ -69,7 +94,7 @@ Pre-recorded demo on DROZY (face video + EOG + labels, see below), EAR + CNN + E
 The dashboard shows the video with the eye points, the fused level, the three branches (score, confidence), the score history,
 the EOG activity, and the label (the person's own sleepiness rating and the lapses of a vigilance task), which is only drawn, never used by the detector.
 
-Notebooks (pick the `.venv` kernel):
+Notebooks, in `notebooks/` (pick the kernel **Driver Drowsiness (.venv)**; each one switches to the project root in its first cell):
 
 | Notebook | What it shows |
 |---|---|
@@ -90,7 +115,10 @@ drowsiness/
             synthetic.py, eog_branch.py (EOG as a fusion branch), drozy.py (DROZY loader), eeg_branch.py (placeholder)
   fusion/   fuse.py, drozy_replay.py (DROZY replay + dashboard + CLI)
   dashboard/ server.py (web server, standard library only), session.py (branches + fusion per viewer), static/ (the page)
+notebooks/  the five notebooks (EAR, CNN, EOG exploration, EOG detector, multimodal fusion)
 tests/      unit tests; test_notebooks.py runs every notebook (slow)
+docs/       model comparison and the DROZY results plot
+train_eye_model.py, download_models.py, Makefile, Dockerfile (dashboard on a server, not yet built)
 ```
 `data/`, `models/` and `runs/` are local and not in git.
 
@@ -176,3 +204,9 @@ The EU rule for drowsiness warnings (Delegated Regulation 2021/1341, Annex I Par
 * MRL Eye dataset (eye-state training), YuNet face detector (OpenCV, MIT), dlib 68-point landmark model: see each source for its terms before any use beyond coursework.
 
 Reference design: Beles et al., *Sensors* 2024, 24, 1541 (fuzzy multi-sensor fusion).
+
+## Licence
+
+The code is under the [MIT licence](LICENSE). The datasets and the downloaded models keep their own terms (see above): DROZY and MRL Eye may not be
+redistributed, and the dlib landmark model was trained on data that excludes commercial use. No dataset, model file or face picture is part of this repository.
+To cite the project, see [CITATION.cff](CITATION.cff).

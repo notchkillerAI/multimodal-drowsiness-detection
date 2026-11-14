@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use this project, please cite it as below."
+title: "Multimodal driver-drowsiness detection (EAR, eye-state CNN, EOG, fusion)"
+type: software
+authors:
+  - family-names: Bhattacharya
+    given-names: Arpan
+license: MIT
+date-released: 2026-11-14
