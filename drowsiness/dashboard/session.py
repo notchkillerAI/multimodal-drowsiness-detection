@@ -17,7 +17,9 @@ from drowsiness.fusion.fuse import DEFAULT_TRUST, Fusion
 from drowsiness.video.cnn_branch import CnnBranch
 from drowsiness.video.ear_branch import EarBranch
 
+VIDEO_BRANCHES = {"ear": EarBranch, "cnn": CnnBranch}
 SIGNAL_SLOTS = ("eog",)  # shown on the page even when nothing is connected, so the layout does not change later
+SIGNAL_SECONDS = 30.0  # how much of the electrode signal the page draws
 RAW_KEYS = ("perclos", "blink_count", "blink_rate_per_min", "current_closure_s", "longest_closure_s", "closure_level")
 LIMITS = {"drowsy_on": (0.5, 0.9), "persist_s": (0.0, 10.0), "smooth_s": (0.0, 10.0)}
 
@@ -38,10 +40,14 @@ def plain(value):
 
 
 class Session:
-    def __init__(self, calibrate_s=10.0, signal_branches=None, clock=time.monotonic):
+    def __init__(self, calibrate_s=10.0, signal_branches=None, clock=time.monotonic, branches=("ear", "cnn"), signal_slots=SIGNAL_SLOTS):
+        """branches: the camera branches to run ("ear", "cnn"); signal_branches: {"eog": branch} when a recording or a
+        device delivers one; signal_slots: the signal panels the page shows even while nothing is connected."""
         self.calibrate_s, self.clock = calibrate_s, clock
-        self.video = {"ear": EarBranch(calibrate_s=calibrate_s), "cnn": CnnBranch()}
-        self.signal = dict(signal_branches or {})  # the EOG branch goes here once the device is known
+        self.video = {n: VIDEO_BRANCHES[n](calibrate_s=calibrate_s) if n == "ear" else VIDEO_BRANCHES[n]() for n in branches}
+        self.signal = dict(signal_branches or {})  # the EOG branch goes here (a recording now, the device later)
+        self.slots = tuple(signal_slots)
+        self._signal_sent = {name: 0.0 for name in self.signal}  # time of the last signal sample already sent to the page
         self.enabled = {name: True for name in (*self.video, *self.signal)}
         self.unavailable = {}  # branch name -> why it could not start (a missing model file)
         self.fusion = Fusion()
@@ -68,10 +74,10 @@ class Session:
         return plain(
             {
                 "video": list(self.video),
-                "signal": {slot: slot in self.signal for slot in SIGNAL_SLOTS},
+                "signal": {slot: slot in self.signal for slot in self.slots},
                 "unavailable": self.unavailable,
                 "enabled": self.enabled,
-                "trust": {name: self.fusion.trust.get(name, DEFAULT_TRUST.get(name, 0.0)) for name in (*self.video, *SIGNAL_SLOTS)},
+                "trust": {name: self.fusion.trust.get(name, DEFAULT_TRUST.get(name, 0.0)) for name in (*self.video, *self.slots)},
                 "drowsy_on": self.fusion.drowsy_on,
                 "warn_on": self.fusion.warn.on,
                 "persist_s": self.fusion.persist_s,
@@ -103,20 +109,21 @@ class Session:
     def recalibrate(self):
         """Learn the EAR threshold again from the next seconds of open eyes (another person, other glasses, new light)."""
         with self.lock:
-            if "ear" not in self.unavailable:
+            if "ear" in self.video and "ear" not in self.unavailable:
                 self.video["ear"].recalibrate(self.t, self.calibrate_s)
 
     def reset_fusion(self):
         with self.lock:
             self.fusion.reset()
 
-    def process(self, frame):
-        """One BGR camera frame -> everything the page shows for it."""
+    def process(self, frame, t=None):
+        """One BGR frame (None when there is no camera branch) -> everything the page shows for it.
+        t: the time of the frame in a recording; left out for a live camera, which uses the clock."""
         with self.lock:
             now = self.clock()
             if self.started_at is None:
                 self.started_at = now
-            self.last_used, self.t = now, now - self.started_at
+            self.last_used, self.t = now, (now - self.started_at if t is None else t)
             t, began = self.t, time.perf_counter()
 
             outputs = {}
@@ -128,11 +135,14 @@ class Session:
                     outputs[name] = branch.update(t)
             state = self.fusion.step(t, outputs)
 
-            branches = {name: self._branch_view(name, state["branches"].get(name)) for name in (*self.video, *SIGNAL_SLOTS)}
+            branches = {name: self._branch_view(name, state["branches"].get(name)) for name in (*self.video, *self.slots)}
+            for name in self.signal:
+                if branches[name].get("connected") and self.enabled[name]:
+                    branches[name].update(self._signal_view(name, t))
             return plain(
                 {
                     "t": t,
-                    "frame": [frame.shape[1], frame.shape[0]],
+                    "frame": None if frame is None else [frame.shape[1], frame.shape[0]],
                     "level": state["level"],
                     "action": state["action"],
                     "reason": state["reason"],
@@ -173,3 +183,23 @@ class Session:
             else:
                 view["frame"].update(p_closed=last["p_closed"], left=last["p_left"], right=last["p_right"], side=last["side"])
         return view
+
+    def _signal_view(self, name, t):
+        """The new part of the electrode signal since the last reply (the page keeps the last 30 s) and the eye events in it."""
+        monitor = getattr(self.signal[name], "monitor", None)
+        if monitor is None:
+            return {}
+        stream = monitor.stream
+        signed = len(stream.signed_trace) > 0  # EOG: the filtered signal in microvolts; EMG: the activity (no sign)
+        new, sent = [], self._signal_sent[name]
+        for when, value in reversed(stream.signed_trace if signed else stream.trace):
+            if when <= sent or when < t - SIGNAL_SECONDS:
+                break
+            new.append((when, value))
+        new.reverse()
+        if new:
+            self._signal_sent[name] = new[-1][0]
+        events = [
+            (e["start"], e["end"]) for e in stream.detector.events[-60:] if e["end"] > t - SIGNAL_SECONDS and e["start"] >= 0
+        ]  # not the events of a warm-up recording
+        return {"signal": new, "events": events, "unit": "µV" if signed else "activity"}

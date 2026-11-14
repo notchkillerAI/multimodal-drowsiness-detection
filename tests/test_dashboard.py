@@ -7,7 +7,12 @@ import cv2
 import numpy as np
 import pytest
 
+from drowsiness.bio.eog_branch import LiveEogBranch
+from drowsiness.bio.eye_events import LinearModel
+from drowsiness.bio.sensors import SimulatedSource
+from drowsiness.bio.synthetic import synthetic_emg
 from drowsiness.common.branch import Branch
+from drowsiness.dashboard import recordings
 from drowsiness.dashboard.server import Dashboard
 from drowsiness.dashboard.session import Session, plain
 
@@ -115,13 +120,18 @@ def test_the_server_serves_the_page_and_answers_frames_over_http():
     dashboard = Dashboard(port=0, max_sessions=1).serve_in_background()
     try:
         status, page = call(dashboard.url + "/")
-        assert status == 200 and b"Driver drowsiness dashboard" in page and b"EOG" in page
+        assert status == 200 and b"Driver drowsiness" in page and b"EOG" in page
         assert call(dashboard.url + "/app.js")[0] == 200 and call(dashboard.url + "/style.css")[0] == 200
         assert call(dashboard.url + "/../server.py")[0] == 404  # only the three page files are served
 
+        config = json.loads(call(dashboard.url + "/api/config")[1])
+        assert config["mode"] == "multimodal" and config["video"] == ["ear", "cnn"] and config["eog"]
+        assert config["sources"][0]["id"] == "camera" and config["sources"][0]["available"]
+        assert call(dashboard.url + "/api/session", json.dumps({"source": "video:../secret.mov"}).encode())[0] == 400  # ids are looked up
+
         status, body = call(dashboard.url + "/api/session", b"")
         opened = json.loads(body)
-        assert status == 200 and opened["video"] == ["ear", "cnn"] and opened["signal"] == {"eog": False}
+        assert status == 200 and opened["video"] == ["ear", "cnn"] and opened["signal"] == {"eog": False} and not opened["replay"]
         key = opened["session"]
         assert call(dashboard.url + "/api/session", b"")[0] == 503  # the one place is taken
 
@@ -140,3 +150,81 @@ def test_the_server_serves_the_page_and_answers_frames_over_http():
         assert call(dashboard.url + "/api/session", b"")[0] == 200  # and the place is free again
     finally:
         dashboard.close()
+
+
+def test_each_mode_runs_only_its_own_branches():
+    black = np.zeros((240, 320, 3), np.uint8)
+    for branches, slots in ((("ear",), ()), (("cnn",), ()), ((), ("eog",))):
+        session = Session(branches=branches, signal_slots=slots).start()
+        reply = session.process(black if branches else None)
+        assert list(reply["branches"]) == [*branches, *slots] and (reply["frame"] is None) == (not branches)
+        session.stop()
+
+
+def test_sources_offer_live_and_recorded_inputs_for_each_mode(tmp_path):
+    (tmp_path / "drive.mp4").write_bytes(b"")
+    (tmp_path / "notes.txt").write_text("")
+    for mode in ("ear", "cnn", "multimodal"):
+        found = recordings.sources(mode, data=str(tmp_path))
+        assert found[0] == {"id": "camera", "label": "Camera", "group": "live", "available": True, "note": found[0]["note"]}
+        assert {"video:drive.mp4"} <= {s["id"] for s in found} and not any("notes" in s["id"] for s in found)
+    eog = recordings.sources("eog", data=str(tmp_path))
+    assert eog[0]["id"] == "sensor" and not eog[0]["available"] and "no device connected" in eog[0]["note"]  # until the device is here
+    assert not any(s["id"].startswith("video:") for s in eog)
+    with_device = recordings.sources("eog", sensor={"source": "serial"}, data=str(tmp_path))
+    assert with_device[0]["label"] == "EOG sensor (serial)"
+    with pytest.raises(ValueError):
+        recordings.open_recording("video:notes.txt", "ear", data=str(tmp_path))
+
+
+def test_player_replays_a_recording_through_a_session_and_reports_the_end():
+    class ThreeTicks:
+        duration, label = 0.3, "test label"
+
+        def __init__(self):
+            self.t, self.closed = 0.0, False
+
+        def next(self, decode=True):
+            self.t += 0.1
+            return (self.t, None) if self.t < 0.35 else None
+
+        def feedback(self, session):
+            pass
+
+        def close(self):
+            self.closed = True
+
+    recording = ThreeTicks()
+    session = Session(branches=(), signal_branches={"eog": FakeEog()}).start()
+    player = recordings.Player(session, recording)
+    player.start()
+    seen, seq = [], 0
+    while True:
+        reply = player.next_after(seq, timeout=5.0)
+        seq = reply["seq"]
+        seen.append(reply)
+        if reply.get("ended"):
+            break
+    player.join(timeout=2.0)
+    results = [r for r in seen if not r.get("ended")]
+    # only the newest result is kept, so a slow page skips results instead of falling behind
+    assert results and 0.1 <= results[-1]["t"] <= 0.31 and results[-1]["label"] == "test label" and results[-1]["frame"] is None
+    assert results[-1]["branches"]["eog"]["score"] == 0.8 and recording.closed and "error" not in seen[-1]
+
+
+def test_live_eog_branch_reads_a_sensor_and_goes_stale_when_it_stops():
+    t, x, _ = synthetic_emg(40, 500, [(0, 15)], 50.0, seed=5)
+    model = LinearModel(np.zeros(4), np.ones(4), np.zeros(4), 0.0)
+    branch = LiveEogBranch(SimulatedSource(t[: 20 * 500], x[: 20 * 500]), model, 500, "emg")  # the sensor sends 20 s, then nothing
+    branch.start()
+    assert branch.update(-1.0) is None  # nothing received yet
+    for i in range(1, 201):
+        out = branch.update(i / 10)
+    assert out["raw"]["status"].startswith("learning") and out["confidence"] == 0.0  # still learning the person's normal
+    assert out["timestamp"] == pytest.approx(20.0)  # the last time samples arrived: fusion drops it as stale after 2 s
+    for i in range(201, 260):
+        out = branch.update(i / 10)
+    assert out["timestamp"] == pytest.approx(20.0) and out["raw"]["status"] == "no data from the sensor"
+    session = Session(branches=(), signal_branches={"eog": branch})
+    view = session._signal_view("eog", 20.0)
+    assert view["unit"] == "activity" and len(view["signal"]) > 1000 and session._signal_view("eog", 20.0)["signal"] == []  # sent once

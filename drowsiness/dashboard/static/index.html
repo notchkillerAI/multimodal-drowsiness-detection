@@ -3,82 +3,92 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <title>Driver drowsiness dashboard</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header>
-  <h1>Driver drowsiness dashboard</h1>
-  <span id="link" class="pill">not started</span>
+  <div class="title">
+    <div class="eyebrow">Driver drowsiness detection</div>
+    <h1 id="title">Dashboard</h1>
+  </div>
+  <div class="row source">
+    <label class="field">Input
+      <select id="source"></select>
+    </label>
+    <label class="field" id="speed-field" hidden>Speed
+      <select id="speed"><option value="1">1× (real time)</option><option value="10">10×</option><option value="60" selected>60×</option></select>
+    </label>
+    <button id="start" class="primary">Start</button>
+    <button id="stop" disabled>Stop</button>
+    <span id="link" class="pill">not started</span>
+  </div>
 </header>
+<p id="source-note" class="muted small" hidden></p>
 
 <section id="banner" class="banner idle" aria-live="polite">
   <span id="level-icon" class="icon">●</span>
   <div>
     <div id="level">Not running</div>
-    <div id="reason" class="muted">Start the camera to begin. The first 10 seconds calibrate the EAR branch: keep your eyes open and look at the camera.</div>
+    <div id="reason" class="muted">Choose an input and press Start.</div>
   </div>
   <div class="banner-score">
-    <div class="muted">fused score</div>
+    <div class="muted small">fused score</div>
     <div id="fused" class="big">–</div>
   </div>
 </section>
 
-<main>
+<section id="recording" class="card recording" hidden>
+  <span class="pill">pre-recorded</span>
+  <span id="label" class="muted"></span>
+  <div class="progress"><div id="progress"></div></div>
+  <span id="clock" class="num-small">0:00</span>
+</section>
+
+<main id="main">
   <section class="card" id="camera-card">
     <div class="stage">
       <div class="mirror" id="mirror">
         <video id="video" playsinline muted></video>
+        <img id="picture" alt="" hidden>
         <canvas id="overlay"></canvas>
       </div>
-      <div id="stage-note" class="stage-note">Camera is off</div>
+      <div id="stage-note" class="stage-note">Not running</div>
     </div>
     <div class="row controls">
-      <button id="start" class="primary">Start camera</button>
-      <button id="demo" hidden>Play demo recording</button>
-      <button id="stop" disabled>Stop</button>
       <select id="cameras" title="Camera" hidden></select>
-      <label class="check"><input type="checkbox" id="mirror-on" checked> Mirror</label>
+      <label class="check" id="mirror-field"><input type="checkbox" id="mirror-on" checked> Mirror</label>
+      <button id="recalibrate" disabled hidden title="Learn the EAR threshold again from 10 s of open eyes">Recalibrate EAR</button>
     </div>
-    <div class="row controls">
-      <button id="recalibrate" disabled title="Learn the EAR threshold again from 10 s of open eyes">Recalibrate EAR</button>
-      <button id="reset" disabled title="Forget the smoothed score and the current alarm">Reset fusion</button>
-      <button id="csv" disabled>Download CSV</button>
-      <label class="check"><input type="checkbox" id="sound" checked> Alarm sound</label>
-    </div>
-    <div class="tiles">
-      <div class="tile"><div class="muted">frames per second</div><div id="fps" class="num">–</div></div>
-      <div class="tile"><div class="muted">round trip</div><div id="latency" class="num">–</div></div>
-      <div class="tile"><div class="muted">processing</div><div id="ms" class="num">–</div></div>
-      <div class="tile"><div class="muted">fused confidence</div><div id="conf" class="num">–</div></div>
-    </div>
-    <p class="muted small">The picture goes only to this dashboard's server, is analysed in memory and is not saved. Only numbers are kept, and only in this page until you close it.</p>
+    <p class="muted small">A camera picture goes only to this dashboard's server, is analysed in memory and is never saved.</p>
   </section>
-
-  <section class="branches">
-    <article class="card branch" data-branch="ear">
-      <div class="branch-head"><span class="swatch s1"></span><h2>EAR</h2><span class="muted">eye aspect ratio from 68 face landmarks</span>
-        <label class="switch"><input type="checkbox" data-enable="ear" checked><span>on</span></label></div>
-      <div class="branch-body"></div>
-    </article>
-    <article class="card branch" data-branch="cnn">
-      <div class="branch-head"><span class="swatch s2"></span><h2>CNN</h2><span class="muted">eye-state network on the two eye crops</span>
-        <label class="switch"><input type="checkbox" data-enable="cnn" checked><span>on</span></label></div>
-      <div class="branch-body"></div>
-    </article>
-    <article class="card branch waiting" data-branch="eog">
-      <div class="branch-head"><span class="swatch s3"></span><h2>EOG</h2><span class="muted">eye electrodes</span>
-        <span class="pill">not connected</span></div>
-      <div class="branch-body"><p class="muted">Reserved for the EOG device. When it is connected its score, confidence, blink rate and signal appear here and it joins the vote with its own weight. The camera branches work without it.</p></div>
-    </article>
-  </section>
+  <section class="branches" id="branches"></section>
 </main>
 
+<section class="card" id="tools">
+  <div class="tiles">
+    <div class="tile"><div class="muted small">updates per second</div><div id="fps" class="num">–</div></div>
+    <div class="tile"><div class="muted small" id="latency-name">round trip</div><div id="latency" class="num">–</div></div>
+    <div class="tile"><div class="muted small">processing</div><div id="ms" class="num">–</div></div>
+    <div class="tile"><div class="muted small">fused confidence</div><div id="conf" class="num">–</div></div>
+  </div>
+  <div class="row controls">
+    <button id="reset" disabled title="Forget the smoothed score and the current alarm">Reset fusion</button>
+    <button id="csv" disabled>Download CSV</button>
+    <label class="check"><input type="checkbox" id="sound" checked> Alarm sound</label>
+  </div>
+</section>
+
+<section class="card" id="signal-card" hidden>
+  <div class="chart-head"><h2>EOG signal, last 30 seconds</h2>
+    <div class="legend"><span><i class="line s3"></i><span id="signal-unit">filtered signal</span></span><span><i class="band"></i>detected eye event</span></div></div>
+  <div class="chart-wrap"><canvas id="chart-signal" height="200"></canvas><div class="tip" hidden></div></div>
+  <p id="signal-empty" class="muted small">No EOG is connected. When the device is added its filtered signal and the detected eye events are drawn here.</p>
+</section>
+
 <section class="card">
-  <div class="chart-head"><h2>Scores, last 60 seconds</h2>
-    <div class="legend">
-      <span><i class="line ink"></i>fused (smoothed)</span><span><i class="line s1"></i>EAR</span><span><i class="line s2"></i>CNN</span><span class="off"><i class="line s3"></i>EOG (not connected)</span>
-    </div></div>
+  <div class="chart-head"><h2>Scores, last 60 seconds</h2><div class="legend" id="score-legend"></div></div>
   <div class="chart-wrap"><canvas id="chart-scores" height="220"></canvas><div class="tip" hidden></div></div>
   <div class="strip-label muted small">level shown</div>
   <canvas id="strip" height="14"></canvas>
@@ -87,34 +97,29 @@
   </div>
 </section>
 
-<div class="two">
-  <section class="card">
+<div class="two" id="eye-charts">
+  <section class="card" id="ear-chart-card" hidden>
     <div class="chart-head"><h2>EAR and its threshold</h2></div>
     <div class="chart-wrap"><canvas id="chart-ear" height="170"></canvas><div class="tip" hidden></div></div>
   </section>
-  <section class="card">
-    <div class="chart-head"><h2>CNN probability that the eyes are closed</h2></div>
+  <section class="card" id="cnn-chart-card" hidden>
+    <div class="chart-head"><h2>DL: probability that the eyes are closed</h2></div>
     <div class="chart-wrap"><canvas id="chart-cnn" height="170"></canvas><div class="tip" hidden></div></div>
   </section>
 </div>
 
-<section class="card" id="eog-signal">
-  <div class="chart-head"><h2>EOG signal</h2><span class="pill">not connected</span></div>
-  <p class="muted">Reserved: the filtered electrode signal with the detected eye events will be drawn here.</p>
-</section>
-
 <section class="card">
-  <h2>Fusion settings</h2>
-  <div class="settings">
-    <label>Weight of EAR <output id="o-trust-ear"></output><input type="range" id="trust-ear" min="0" max="1" step="0.05"></label>
-    <label>Weight of CNN <output id="o-trust-cnn"></output><input type="range" id="trust-cnn" min="0" max="1" step="0.05"></label>
-    <label class="off">Weight of EOG <output id="o-trust-eog"></output><input type="range" id="trust-eog" min="0" max="1" step="0.05" disabled></label>
-    <label>DROWSY starts above <output id="o-drowsy-on"></output><input type="range" id="drowsy-on" min="0.5" max="0.9" step="0.05"></label>
-    <label>Seconds above it before the alarm <output id="o-persist-s"></output><input type="range" id="persist-s" min="0" max="10" step="0.5"></label>
-    <label>Smoothing, seconds <output id="o-smooth-s"></output><input type="range" id="smooth-s" min="0" max="10" step="0.5"></label>
-    <label class="check"><input type="checkbox" id="warn-supp"> Stay yellow while the score is still high after a recovery</label>
+  <h2>Settings</h2>
+  <div class="settings" id="settings">
+    <label data-weight="ear" hidden>Weight of EAR <output id="o-trust-ear"></output><input type="range" id="trust-ear" min="0" max="1" step="0.05"></label>
+    <label data-weight="cnn" hidden>Weight of DL <output id="o-trust-cnn"></output><input type="range" id="trust-cnn" min="0" max="1" step="0.05"></label>
+    <label data-weight="eog" hidden>Weight of EOG <output id="o-trust-eog"></output><input type="range" id="trust-eog" min="0" max="1" step="0.05"></label>
+    <label>DROWSY starts above <output id="o-drowsy-on"></output><input type="range" id="drowsy-on" min="0.5" max="0.9" step="0.05" value="0.6"></label>
+    <label>Seconds above it before the alarm <output id="o-persist-s"></output><input type="range" id="persist-s" min="0" max="10" step="0.5" value="3"></label>
+    <label>Smoothing, seconds <output id="o-smooth-s"></output><input type="range" id="smooth-s" min="0" max="10" step="0.5" value="3"></label>
+    <label class="check"><input type="checkbox" id="warn-supp" checked> Stay yellow while the score is still high after a recovery</label>
   </div>
-  <p class="muted small">fused = Σ weight × confidence × score ÷ Σ weight × confidence. A closure of 1 s or more seen by a confident camera branch alarms at once, whatever the score.</p>
+  <p class="muted small" id="formula"></p>
 </section>
 
 <script src="app.js"></script>

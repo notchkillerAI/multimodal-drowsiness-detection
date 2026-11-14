@@ -11,5 +11,7 @@ COPY download_models.py .
 COPY models ./models
 RUN python download_models.py
 COPY drowsiness ./drowsiness
+COPY apps ./apps
 EXPOSE 7860
-CMD ["python", "-m", "drowsiness.dashboard", "--host", "0.0.0.0", "--port", "7860"]
+# the camera modes; recordings are not in the image (data/ is not copied)
+CMD ["python", "apps/multimodal.py", "--host", "0.0.0.0", "--port", "7860"]

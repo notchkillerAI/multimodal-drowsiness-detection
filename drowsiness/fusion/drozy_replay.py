@@ -46,6 +46,22 @@ LEVEL_COLOUR = {  # BGR
 BRANCH_COLOUR = {"ear": (255, 170, 60), "cnn": (90, 200, 90), "eog": (80, 140, 255)}  # BGR
 
 
+def drozy_eog_branch(subject, test):
+    """(EOG branch for this test, the earlier test its baseline comes from or None). The person's normal blinking comes
+    from their first recorded test of the other sessions (an alert recording made before, as a driver would calibrate);
+    the first test has no earlier one, so the detector learns from its own first 5 minutes and starts scoring at 7.5 minutes."""
+    t_eog, uV, fs = drozy.eog(subject, test)
+    earlier = [t for s, t in drozy.tests() if s == subject and t < test]
+    baseline = warm_up = None
+    if earlier:
+        t_ref, uV_ref, _ = drozy.eog(subject, min(earlier))
+        baseline = enrol_baseline(t_ref, uV_ref, fs, "eog")
+        n = int((CALIBRATE_S + WINDOW_S) * fs)  # the last 2.5 minutes of that test: the detector starts "already running"
+        warm_up = (t_ref[-n:], uV_ref[-n:])
+    branch = EogBranch(t_eog, uV, LinearModel.load(EOG_MODEL), fs=fs, baseline=baseline, warm_up=warm_up)
+    return branch, (min(earlier) if earlier else None)
+
+
 class Replay:
     """One DROZY test with its branches, fusion and label, advanced one video frame at a time."""
 
@@ -64,19 +80,8 @@ class Replay:
         self.history = {"t": [], "ear": [], "cnn": [], "eog": [], "fused": [], "level": []}
 
     def _eog_branch(self):
-        """EOG branch for this test. The person's normal blinking comes from their first recorded test of the other
-        sessions (an alert recording made before, as a driver would calibrate); the first test has no earlier one,
-        so the detector learns from its own first 5 minutes and starts scoring at 7.5 minutes."""
-        t_eog, uV, fs = drozy.eog(self.subject, self.test)
-        earlier = [t for s, t in drozy.tests() if s == self.subject and t < self.test]
-        baseline = warm_up = None
-        if earlier:
-            t_ref, uV_ref, _ = drozy.eog(self.subject, min(earlier))
-            baseline = enrol_baseline(t_ref, uV_ref, fs, "eog")
-            n = int((CALIBRATE_S + WINDOW_S) * fs)  # the last 2.5 minutes of that test: the detector starts "already running"
-            warm_up = (t_ref[-n:], uV_ref[-n:])
-        self.baseline_from = min(earlier) if earlier else None
-        return EogBranch(t_eog, uV, LinearModel.load(EOG_MODEL), fs=fs, baseline=baseline, warm_up=warm_up)
+        branch, self.baseline_from = drozy_eog_branch(self.subject, self.test)
+        return branch
 
     def step(self):
         """Process the next video frame; returns (t, zoomed frame, fusion result) or None at the end."""

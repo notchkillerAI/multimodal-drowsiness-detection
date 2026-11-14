@@ -27,7 +27,7 @@ EEG (planned)                                         ┘
 | EOG / EMG | eye electrodes (recording or live sensor) | `drowsiness/bio/eye_events.py` | working on the DD-Database recordings; EMG only tested on simulated signals |
 | EEG | electrodes | `drowsiness/bio/eeg_branch.py` | placeholder |
 | Fusion | all of the above | `drowsiness/fusion/fuse.py` | working: EAR + CNN live, EAR + CNN + EOG on recordings (DROZY) |
-| Dashboard | camera in the browser | `drowsiness/dashboard/` | working for the camera branches; a place is reserved for the EOG device |
+| Dashboards | camera, recordings, EOG device | `apps/`, `drowsiness/dashboard/` | four modes (EAR, DL, EOG, multimodal), live and pre-recorded; the live EOG device is not connected yet |
 
 ![Mean score of each DROZY test against the person's own sleepiness rating, for each branch and the fused score](docs/drozy_results.png)
 
@@ -40,7 +40,7 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt     # runtime + tests + lint (dlib builds from source, about 3 minutes)
 .venv/bin/python download_models.py               # face detector and landmark model into models/ and the project root
 ```
-The same steps are in the `Makefile` (`make setup`, `make models`, `make test`, `make lint`, `make dashboard`; `make help` lists them).
+The same steps are in the `Makefile` (`make setup`, `make models`, `make test`, `make lint`, `make ear`, `make dl`, `make eog`, `make multimodal`; `make help` lists them).
 
 **The eye-state model of the CNN branch is trained here and is not in git** (`models/eye_state.onnx`). To build it (downloads the MRL Eye dataset, about 10 minutes of training):
 ```bash
@@ -66,24 +66,43 @@ From the terminal (a camera index, a video file or a stream URL; `q` quits the w
 Each run draws the HUD (values, confidence, big red alert below the face for closures of 1 s or more), writes a per-frame CSV into `runs/`
 and prints the measured processing time.
 
-**Live dashboard in the browser** (camera -> EAR + CNN -> fusion, interactive):
+**The four dashboards** (`apps/`, one file per mode; dark theme, in the browser):
 ```bash
-.venv/bin/python -m drowsiness.dashboard                                   # opens http://localhost:8000, press "Start camera"
-.venv/bin/python -m drowsiness.dashboard --demo-video data/test_vid_1.mov  # adds a "Play demo recording" button (no camera needed)
+.venv/bin/python apps/ear_only.py      # EAR only
+.venv/bin/python apps/dl_only.py       # DL only (the eye-state network)
+.venv/bin/python apps/eog_only.py      # EOG only (no camera)
+.venv/bin/python apps/multimodal.py    # EAR + DL + EOG fused
 ```
-The page opens the camera itself (the browser asks for permission; no OpenCV window, no camera permission for Terminal), sends one small JPEG
-frame at a time to the Python server on the same computer, and draws what comes back: the level banner with the reason, the face box, the EAR
-points and the CNN eye squares on the picture, one card per branch (score, confidence, PERCLOS, blinks, closure, share of the vote, weakest
-input check), 60-second charts with hover values and a strip of the levels shown. Interactive: switch a branch on or off, move the trust
-weights, the DROWSY threshold, the persistence and the smoothing while it runs, recalibrate EAR, reset the fusion, alarm sound, download the
-run as CSV. The detection code is the same Python as everywhere else (`drowsiness/dashboard/session.py` calls the branches and `Fusion`).
-**The EOG has its reserved place**: a card, a signal panel, a weight slider and a legend entry marked "not connected"; on the server a signal
-branch is passed as `Session(signal_branches={"eog": branch})` and then appears in the reply and in the vote (tested with a stand-in branch).
-Measured on this Mac through HTTP with the 21 s test video: 30 frames per second, round trip 27 ms per frame (25 ms of it processing).
-Keep the tab visible: browsers slow a hidden tab down to about one frame per second (the page says so when it happens).
-Frames are analysed in memory and never saved. To put it on a server: `--host 0.0.0.0 --port 7860` behind **https** (a browser gives a page
-the camera only on https or localhost); a `Dockerfile` is included but **has not been built or run** (no Docker on this Mac), and each viewer
-loads its own models (`--max-sessions`, default 3).
+Each opens a page at http://localhost:8000 (`--port` changes it, so several can run side by side). Choose the **input** on the page and press Start:
+
+| Mode | Live input | Pre-recorded input |
+|---|---|---|
+| EAR only, DL only | the camera | a video file in `data/`, or the video of a DROZY test |
+| EOG only | the EOG device (**not connected yet**: listed as "not connected" until the app is started with `--sensor`) | the EOG channel of a DROZY test, or a DD-Database recording (speed 1×, 10× or 60×) |
+| Multimodal | the camera (EAR + DL); the EOG joins when its device is given with `--sensor` | a DROZY test (video + EOG on one clock), or a video file in `data/` |
+
+The page shows the level banner with the reason, the picture with the face box, the EAR points and the DL eye squares, one card per branch
+(score, confidence and its measured values), the EOG signal with the detected eye events, 60-second score charts with hover values, a strip of
+the levels shown, and for a recording its progress and its label (the label is only shown, never used by the detector). While it runs you can
+change the DROWSY threshold, the persistence and the smoothing, switch branches on or off and move their weights (multimodal), recalibrate
+EAR, reset the fusion, mute the alarm and download the run as CSV.
+
+How it is built (`drowsiness/dashboard/`): a live camera is opened by the page, which sends one small JPEG frame at a time to the Python server
+(no OpenCV window, no camera permission for Terminal). A recording, and later the live EOG device, is read by the server (`recordings.py`)
+with its own timestamps and the page asks for the newest result. Both go through the same `Session.process`, which calls the same branches
+and the same `Fusion` as the rest of the project, so the detector cannot tell a replay from a live run. In a one-branch mode that branch has
+the whole vote. Frames are analysed in memory and never saved.
+
+**The live EOG device.** The device for this project is different from the datasets' and is not here yet. The path for it exists and is
+tested with a simulated sensor: `LiveEogBranch` (`drowsiness/bio/eog_branch.py`) takes any source with `start()`, `read()` and `stop()`;
+a serial port and a Lab Streaming Layer source exist (`drowsiness/bio/sensors.py`). The device is described on the command line, for example
+`apps/eog_only.py --sensor serial --serial-port /dev/tty.usbmodem1101 --sample-rate 250 --kind eog --to-microvolts 0.5`.
+**Not validated on a real device**, and the EOG model was trained on another electrode pair.
+
+Measured on this Mac: live path through HTTP with the 21 s test video, 30 frames per second, round trip 27 ms per frame; a DROZY test in the
+multimodal mode is processed in about 25 ms per frame (its video has 15 or 30 frames per second). Keep the tab of a live camera visible:
+browsers slow a hidden tab down to about one frame per second (the page says so). To run on a server: `--host 0.0.0.0 --port 7860` behind
+**https** (a browser gives a page the camera only on https or localhost); the `Dockerfile` **has not been built or run**.
 
 Pre-recorded demo on DROZY (face video + EOG + labels, see below), EAR + CNN + EOG fused, paced like the recording:
 ```bash
@@ -114,7 +133,9 @@ drowsiness/
   bio/      eye_events.py (EOG/EMG eye-event detector, features, model, monitor), sensors.py (simulated / serial / LSL sources),
             synthetic.py, eog_branch.py (EOG as a fusion branch), drozy.py (DROZY loader), eeg_branch.py (placeholder)
   fusion/   fuse.py, drozy_replay.py (DROZY replay + dashboard + CLI)
-  dashboard/ server.py (web server, standard library only), session.py (branches + fusion per viewer), static/ (the page)
+  dashboard/ server.py (web server, standard library only), session.py (branches + fusion per viewer), recordings.py (replay of video files,
+            DROZY, DD-Database and the live sensor clock), static/ (the page)
+apps/       ear_only.py, dl_only.py, eog_only.py, multimodal.py: one dashboard per mode
 notebooks/  the five notebooks (EAR, CNN, EOG exploration, EOG detector, multimodal fusion)
 tests/      unit tests; test_notebooks.py runs every notebook (slow)
 docs/       model comparison and the DROZY results plot
@@ -125,7 +146,7 @@ train_eye_model.py, download_models.py, Makefile, Dockerfile (dashboard on a ser
 ## Tests and code style
 
 ```bash
-.venv/bin/python -m pytest              # 97 fast tests
+.venv/bin/python -m pytest              # 101 fast tests
 .venv/bin/python -m pytest -m slow      # also executes all notebooks (about 4 minutes)
 .venv/bin/ruff check . && .venv/bin/ruff format --check .
 ```
