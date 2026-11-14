@@ -41,6 +41,25 @@ From the terminal (a camera index, a video file or a stream URL; `q` quits the w
 Each run draws the HUD (values, confidence, big red alert below the face for closures of 1 s or more), writes a per-frame CSV into `runs/`
 and prints the measured processing time.
 
+**Live dashboard in the browser** (camera -> EAR + CNN -> fusion, interactive):
+```bash
+.venv/bin/python -m drowsiness.dashboard                                   # opens http://localhost:8000, press "Start camera"
+.venv/bin/python -m drowsiness.dashboard --demo-video data/test_vid_1.mov  # adds a "Play demo recording" button (no camera needed)
+```
+The page opens the camera itself (the browser asks for permission; no OpenCV window, no camera permission for Terminal), sends one small JPEG
+frame at a time to the Python server on the same computer, and draws what comes back: the level banner with the reason, the face box, the EAR
+points and the CNN eye squares on the picture, one card per branch (score, confidence, PERCLOS, blinks, closure, share of the vote, weakest
+input check), 60-second charts with hover values and a strip of the levels shown. Interactive: switch a branch on or off, move the trust
+weights, the DROWSY threshold, the persistence and the smoothing while it runs, recalibrate EAR, reset the fusion, alarm sound, download the
+run as CSV. The detection code is the same Python as everywhere else (`drowsiness/dashboard/session.py` calls the branches and `Fusion`).
+**The EOG has its reserved place**: a card, a signal panel, a weight slider and a legend entry marked "not connected"; on the server a signal
+branch is passed as `Session(signal_branches={"eog": branch})` and then appears in the reply and in the vote (tested with a stand-in branch).
+Measured on this Mac through HTTP with the 21 s test video: 30 frames per second, round trip 27 ms per frame (25 ms of it processing).
+Keep the tab visible: browsers slow a hidden tab down to about one frame per second (the page says so when it happens).
+Frames are analysed in memory and never saved. To put it on a server: `--host 0.0.0.0 --port 7860` behind **https** (a browser gives a page
+the camera only on https or localhost); a `Dockerfile` is included but **has not been built or run** (no Docker on this Mac), and each viewer
+loads its own models (`--max-sessions`, default 3).
+
 Pre-recorded demo on DROZY (face video + EOG + labels, see below), EAR + CNN + EOG fused, paced like the recording:
 ```bash
 .venv/bin/python -m drowsiness.fusion.drozy_replay --subject 4 --test 3       # window, q quits
@@ -70,6 +89,7 @@ drowsiness/
   bio/      eye_events.py (EOG/EMG eye-event detector, features, model, monitor), sensors.py (simulated / serial / LSL sources),
             synthetic.py, eog_branch.py (EOG as a fusion branch), drozy.py (DROZY loader), eeg_branch.py (placeholder)
   fusion/   fuse.py, drozy_replay.py (DROZY replay + dashboard + CLI)
+  dashboard/ server.py (web server, standard library only), session.py (branches + fusion per viewer), static/ (the page)
 tests/      unit tests; test_notebooks.py runs every notebook (slow)
 ```
 `data/`, `models/` and `runs/` are local and not in git.
@@ -77,7 +97,7 @@ tests/      unit tests; test_notebooks.py runs every notebook (slow)
 ## Tests and code style
 
 ```bash
-.venv/bin/python -m pytest              # 75 fast tests
+.venv/bin/python -m pytest              # 97 fast tests
 .venv/bin/python -m pytest -m slow      # also executes all notebooks (about 4 minutes)
 .venv/bin/ruff check . && .venv/bin/ruff format --check .
 ```

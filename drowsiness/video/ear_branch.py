@@ -89,6 +89,11 @@ class EarBranch(WindowedBranch):
         self.face_detector = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
         self.landmarks = dlib.shape_predictor(LANDMARK_MODEL)
 
+    def recalibrate(self, t, seconds=10.0):
+        """Learn the threshold again from the next `seconds` of open eyes (another person sits down, new glasses, new light).
+        Until then the branch gives no verdict, as at the start."""
+        self.calibrate_s, self._calibrated, self._open_ears = t + seconds, False, []
+
     def update(self, t, frame=None):
         if not self._calibrated and t >= self.calibrate_s:
             self.threshold = calibrate_threshold(self._open_ears, self.threshold)

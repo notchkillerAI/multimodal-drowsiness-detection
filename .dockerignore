@@ -1,0 +1,9 @@
+.venv
+.git
+data
+runs
+docs
+tests
+*.ipynb
+models/candidates
+__pycache__
