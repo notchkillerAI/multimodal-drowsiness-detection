@@ -1,7 +1,7 @@
 # Common commands. `make help` lists them.
 PY = .venv/bin/python
 
-.PHONY: help setup models test test-all lint format ear dl eog multimodal clean
+.PHONY: help setup models test test-all lint format ear dl eog all multimodal clean
 help:        ## show this list
 	@grep -E '^[a-z-]+:.*##' Makefile | sed 's/:.*##/\t/'
 setup:       ## create .venv and install everything for development (dlib builds from source, about 3 minutes)
@@ -23,6 +23,8 @@ dl:          ## dashboard: DL (eye-state network) only
 	$(PY) apps/dl_only.py
 eog:         ## dashboard: EOG only
 	$(PY) apps/eog_only.py
+all:         ## all four dashboards at once (ports 8000 to 8003)
+	$(PY) apps/run_all.py
 multimodal:  ## dashboard: EAR + DL + EOG fused
 	$(PY) apps/multimodal.py
 clean:       ## remove caches
