@@ -73,7 +73,7 @@ and prints the measured processing time.
 .venv/bin/python apps/eog_only.py      # EOG only (no camera)
 .venv/bin/python apps/multimodal.py    # EAR + DL + EOG fused
 ```
-Each opens a page at http://localhost:8000 (`--port` changes it, so several can run side by side). Choose the **input** on the page and press Start:
+Each opens a page at http://localhost:8000 (`--port` changes it, so several can run side by side; if the port is busy, the next free one is taken and printed). Plain `python apps/multimodal.py` also works from any environment (conda included): the app restarts itself with `.venv/bin/python`, where the packages are. Choose the **input** on the page and press Start:
 
 | Mode | Live input | Pre-recorded input |
 |---|---|---|

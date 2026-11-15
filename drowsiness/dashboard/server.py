@@ -12,10 +12,12 @@ Only the Python standard library is used for the web part (no new dependency to 
 
 import argparse
 import csv
+import errno
 import json
 import mimetypes
 import os
 import secrets
+import sys
 import threading
 import time
 from datetime import datetime
@@ -266,8 +268,17 @@ def launch(mode, description):
         sensor["mains_hz"] = args.mains_hz
         if args.sensor == "serial" and not args.serial_port or args.sensor == "lsl" and not args.lsl_stream:
             parser.error("--sensor serial needs --serial-port, --sensor lsl needs --lsl-stream")
-    dashboard = Dashboard(args.host, args.port, args.max_sessions, log_dir=args.log_dir, mode=mode, sensor=sensor)
-    print(f"{TITLES[mode]}\nDashboard: {dashboard.url}   (Ctrl+C stops it)")
+    for port in range(args.port, args.port + 20):  # a busy port (another dashboard is running): take the next free one
+        try:
+            dashboard = Dashboard(args.host, port, args.max_sessions, log_dir=args.log_dir, mode=mode, sensor=sensor)
+            break
+        except OSError as error:
+            if error.errno != errno.EADDRINUSE:
+                raise
+            print(f"Port {port} is in use (another dashboard may be running): trying {port + 1}", flush=True)
+    else:
+        sys.exit(f"No free port between {args.port} and {args.port + 19}: stop the other dashboards or give --port")
+    print(f"{TITLES[mode]}\nDashboard: {dashboard.url}   (Ctrl+C stops it)", flush=True)
     if args.host == "127.0.0.1" and not args.no_browser:
         import webbrowser
 

@@ -5,7 +5,7 @@ EAR + DL (camera) + EOG (electrodes) -> confidence-weighted vote -> smoothing, h
 
 Run from the project root, then choose the input on the page and press Start:
 
-    .venv/bin/python apps/multimodal.py
+    python apps/multimodal.py
 
 Inputs
     live: your camera (EAR + DL); the EOG joins when its device is given with the --sensor options
@@ -15,12 +15,9 @@ The page shows the level, the reason for it, every measured value, live charts a
 with the marks of the detector. Thresholds and timings can be changed while it runs, and the run can be saved as CSV.
 """
 
-import os
-import sys
+from _start import prepare
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-os.chdir(ROOT)  # data/ and models/ are looked up from the project root
-sys.path.insert(0, ROOT)
+prepare()  # project root as the working folder, and the project's own Python (.venv)
 
 from drowsiness.dashboard.server import launch  # noqa: E402
 
