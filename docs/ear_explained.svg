@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 400" width="1000" height="400" role="img" aria-label="Eye aspect ratio: six landmarks per eye; EAR is about 0.3 for an open eye and drops towards 0 when the eye closes">
+  <rect width="1000" height="400" rx="16" fill="#0d1117"/>
+  <g font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <text x="40" y="52" fill="#f0f4fa" font-size="26" font-weight="700">How the EAR branch sees an eye</text>
+    <text x="40" y="82" fill="#8b98ad" font-size="16">Six landmarks per eye (dlib, 68-point model): two vertical distances over one horizontal distance</text>
+
+    <!-- open eye -->
+    <g transform="translate(200 215)">
+      <path d="M120 0 C 60 -78, -60 -78, -120 0 C -60 78, 60 78, 120 0 Z" fill="#e8eef8" stroke="#c9d6ea" stroke-width="3"/>
+      <circle r="44" fill="#3987e5"/><circle r="18" fill="#0d1117"/><circle cx="-13" cy="-14" r="7" fill="#fff" opacity="0.9"/>
+      <g stroke="#d95926" stroke-width="3" stroke-dasharray="6 5">
+        <line x1="-40" y1="-58" x2="-40" y2="58"/><line x1="40" y1="-58" x2="40" y2="58"/>
+      </g>
+      <line x1="-120" y1="0" x2="120" y2="0" stroke="#199e70" stroke-width="3" stroke-dasharray="6 5"/>
+      <g fill="#d95926" stroke="#0d1117" stroke-width="2">
+        <circle cx="-120" cy="0" r="8"/><circle cx="-40" cy="-58" r="8"/><circle cx="40" cy="-58" r="8"/>
+        <circle cx="120" cy="0" r="8"/><circle cx="40" cy="58" r="8"/><circle cx="-40" cy="58" r="8"/>
+      </g>
+      <g fill="#cfd8e6" font-size="16" font-weight="600">
+        <text x="-150" y="6">p1</text><text x="-52" y="-72">p2</text><text x="30" y="-72">p3</text>
+        <text x="132" y="6">p4</text><text x="30" y="86">p5</text><text x="-52" y="86">p6</text>
+      </g>
+      <text x="0" y="140" text-anchor="middle" fill="#2f9e5b" font-size="20" font-weight="700">open: EAR ≈ 0.30</text>
+    </g>
+
+    <!-- formula -->
+    <g transform="translate(500 205)" text-anchor="middle">
+      <text y="-30" fill="#f0f4fa" font-size="30" font-family="'Cambria Math', Georgia, serif" font-style="italic">EAR =</text>
+      <text y="18" fill="#d95926" font-size="22" font-family="Georgia, serif">|p2 − p6| + |p3 − p5|</text>
+      <line x1="-120" y1="32" x2="120" y2="32" stroke="#f0f4fa" stroke-width="2"/>
+      <text y="62" fill="#199e70" font-size="22" font-family="Georgia, serif">2 · |p1 − p4|</text>
+      <text y="112" fill="#8b98ad" font-size="14" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">threshold learnt in a 10 s calibration</text>
+      <text y="132" fill="#8b98ad" font-size="14" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">(0.20 if calibration fails)</text>
+    </g>
+
+    <!-- closed eye -->
+    <g transform="translate(800 215)">
+      <path d="M120 0 C 60 -16, -60 -16, -120 0 C -60 16, 60 16, 120 0 Z" fill="#e8eef8" stroke="#c9d6ea" stroke-width="3"/>
+      <path d="M-120 0 C -60 22, 60 22, 120 0" fill="none" stroke="#5b6b82" stroke-width="3"/>
+      <g fill="#d95926" stroke="#0d1117" stroke-width="2">
+        <circle cx="-120" cy="0" r="8"/><circle cx="-40" cy="-11" r="8"/><circle cx="40" cy="-11" r="8"/>
+        <circle cx="120" cy="0" r="8"/><circle cx="40" cy="11" r="8"/><circle cx="-40" cy="11" r="8"/>
+      </g>
+      <text x="0" y="140" text-anchor="middle" fill="#e5484d" font-size="20" font-weight="700">closed: EAR ≈ 0.05</text>
+    </g>
+  </g>
+</svg>

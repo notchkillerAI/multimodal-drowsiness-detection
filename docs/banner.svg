@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 380" width="1200" height="380" role="img" aria-label="Multimodal driver-drowsiness detection: camera and EOG electrodes fused into one warning level">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="0.55" stop-color="#121a2b"/>
+      <stop offset="1" stop-color="#1a1230"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#3987e5" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#3987e5" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="iris" cx="0.45" cy="0.4" r="0.6">
+      <stop offset="0" stop-color="#7fb6ff"/>
+      <stop offset="0.6" stop-color="#3987e5"/>
+      <stop offset="1" stop-color="#1d4f99"/>
+    </radialGradient>
+    <clipPath id="eyeClip"><path d="M80 0 C 40 -62, -40 -62, -80 0 C -40 62, 40 62, 80 0 Z"/></clipPath>
+  </defs>
+  <rect width="1200" height="380" rx="18" fill="url(#bg)"/>
+  <!-- faint EOG trace across the banner -->
+  <path d="M0 356 L120 356 C134 356 138 342 150 342 C162 342 165 366 178 366 C190 366 193 356 206 356 L1200 356"
+        fill="none" stroke="#199e70" stroke-width="2.5" stroke-opacity="0.55"/>
+  <!-- eye -->
+  <g transform="translate(205 160)">
+    <circle r="150" fill="url(#glow)"/>
+    <path d="M80 0 C 40 -62, -40 -62, -80 0 C -40 62, 40 62, 80 0 Z" fill="#e8eef8"/>
+    <g clip-path="url(#eyeClip)">
+      <circle r="38" fill="url(#iris)"/>
+      <circle r="16" fill="#0d1117"/>
+      <circle cx="-11" cy="-12" r="6" fill="#ffffff" opacity="0.9"/>
+    </g>
+    <path d="M80 0 C 40 -62, -40 -62, -80 0 C -40 62, 40 62, 80 0 Z" fill="none" stroke="#c9d6ea" stroke-width="3"/>
+    <!-- the six EAR landmarks -->
+    <g fill="#d95926" stroke="#0d1117" stroke-width="2">
+      <circle cx="-80" cy="0" r="7"/><circle cx="-28" cy="-46" r="7"/><circle cx="28" cy="-46" r="7"/>
+      <circle cx="80" cy="0" r="7"/><circle cx="28" cy="46" r="7"/><circle cx="-28" cy="46" r="7"/>
+    </g>
+    <!-- face box corners -->
+    <g fill="none" stroke="#3987e5" stroke-width="3" stroke-linecap="round">
+      <path d="M-118 -78 v-22 h22"/><path d="M118 -78 v-22 h-22"/><path d="M-118 78 v22 h22"/><path d="M118 78 v22 h-22"/>
+    </g>
+  </g>
+  <!-- title -->
+  <g font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <text x="410" y="118" fill="#8b98ad" font-size="20" letter-spacing="4">REAL-TIME · MULTIMODAL · EXPLAINABLE</text>
+    <text x="408" y="178" fill="#f0f4fa" font-size="54" font-weight="700">Driver-Drowsiness</text>
+    <text x="408" y="236" fill="#f0f4fa" font-size="54" font-weight="700">Detection</text>
+    <text x="410" y="276" fill="#aab6c8" font-size="19">Camera (EAR + eye-state CNN) and EOG electrodes, fused into one warning</text>
+  </g>
+  <!-- level chips -->
+  <g font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" text-anchor="middle">
+    <rect x="410" y="300" width="86" height="30" rx="15" fill="#2f9e5b"/><text x="453" y="320" fill="#ffffff">ALERT</text>
+    <rect x="504" y="300" width="146" height="30" rx="15" fill="#e7b416"/><text x="577" y="320" fill="#1b1b1b">EARLY WARNING</text>
+    <rect x="658" y="300" width="96" height="30" rx="15" fill="#e5484d"/><text x="706" y="320" fill="#ffffff">DROWSY</text>
+    <rect x="762" y="300" width="122" height="30" rx="15" fill="#a3262b"/><text x="823" y="320" fill="#ffffff">MICROSLEEP</text>
+    <rect x="892" y="300" width="78" height="30" rx="15" fill="#6e1a1d"/><text x="931" y="320" fill="#ffffff">SLEEP</text>
+    <rect x="978" y="300" width="146" height="30" rx="15" fill="#3a0d0f" stroke="#a3262b"/><text x="1051" y="320" fill="#ffffff">UNRESPONSIVE</text>
+  </g>
+</svg>

@@ -1,9 +1,6 @@
 <div align="center">
 
-# 👁️ Multimodal Driver-Drowsiness Detection
-
-**A real-time system that watches the eyes through a camera and eye electrodes (EOG) and fuses them into one clear warning:
-ALERT · EARLY WARNING · DROWSY · MICROSLEEP · SLEEP · UNRESPONSIVE**
+<img src="docs/banner.svg" alt="Multimodal driver-drowsiness detection: camera and EOG electrodes fused into one warning level" width="100%">
 
 [![tests](https://github.com/notchkillerAI/multimodal-drowsiness-detection/actions/workflows/tests.yml/badge.svg)](https://github.com/notchkillerAI/multimodal-drowsiness-detection/actions/workflows/tests.yml)
 ![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)
@@ -49,6 +46,10 @@ flowchart LR
     EAR -. closure length .-> M[Microsleep rule<br/>1 s · 3 s · 6 s] --> L
     CNN -. closure length .-> M
 ```
+
+<p align="center"><img src="docs/ear_explained.svg" alt="Eye aspect ratio from six landmarks per eye: about 0.30 open, about 0.05 closed" width="100%"></p>
+
+<p align="center"><img src="docs/warning_levels.svg" alt="Two roads to a warning: the fused score (EARLY WARNING above 0.4, DROWSY above 0.6) and one eye closure (MICROSLEEP 1 s, SLEEP 3 s, UNRESPONSIVE 6 s)" width="100%"></p>
 
 | Step | What it does | Why |
 |---|---|---|
