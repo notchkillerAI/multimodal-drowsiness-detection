@@ -228,3 +228,11 @@ def test_live_eog_branch_reads_a_sensor_and_goes_stale_when_it_stops():
     session = Session(branches=(), signal_branches={"eog": branch})
     view = session._signal_view("eog", 20.0)
     assert view["unit"] == "activity" and len(view["signal"]) > 1000 and session._signal_view("eog", 20.0)["signal"] == []  # sent once
+
+
+def test_missing_model_note_says_what_to_run():
+    from drowsiness.dashboard.session import missing_model_note
+
+    assert "make models" in missing_model_note("ear", RuntimeError("Unable to open shape_predictor_68_face_landmarks.dat"))
+    assert "train the eye model" in missing_model_note("cnn", RuntimeError("Can't read ONNX file: models/x.onnx"))
+    assert missing_model_note("ear", ValueError("bad frame")) == "ValueError: bad frame"  # other errors are shown as they are

@@ -39,6 +39,21 @@ def plain(value):
     return value
 
 
+FIXES = {
+    "ear": "run `make models` once (downloads the landmark model)",
+    "cnn": "train the eye model once (README, Quick start) and run `make models`",
+}
+
+
+def missing_model_note(name, error):
+    """Why a branch could not start, with what to do about it when a model file is missing."""
+    text = f"{type(error).__name__}: {error}"
+    signs = ("unable to open", "no such file", "can't read", "not found")  # how dlib, OpenCV and ONNX Runtime say it
+    if name in FIXES and (isinstance(error, FileNotFoundError) or any(sign in text.lower() for sign in signs)):
+        return f"model file missing: {FIXES[name]}"
+    return text
+
+
 class Session:
     def __init__(self, calibrate_s=10.0, signal_branches=None, clock=time.monotonic, branches=("ear", "cnn"), signal_slots=SIGNAL_SLOTS):
         """branches: the camera branches to run ("ear", "cnn"); signal_branches: {"eog": branch} when a recording or a
@@ -60,7 +75,7 @@ class Session:
             try:
                 branch.start()
             except Exception as error:  # a missing model must switch off one branch, not the whole dashboard
-                self.unavailable[name] = f"{type(error).__name__}: {error}"
+                self.unavailable[name] = missing_model_note(name, error)
         self.last_used = self.clock()
         return self
 
