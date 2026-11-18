@@ -19,3 +19,9 @@ dist/
 .vscode/
 .idea/
 *.part
+
+# local only: working notes, editor launch settings, the untested container file
+CLAUDE.md
+.claude/
+Dockerfile
+.dockerignore
