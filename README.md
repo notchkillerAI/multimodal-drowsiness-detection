@@ -5,7 +5,7 @@
 **A real-time system that watches the eyes through a camera and eye electrodes (EOG) and fuses them into one clear warning:
 ALERT · EARLY WARNING · DROWSY · MICROSLEEP · SLEEP · UNRESPONSIVE**
 
-[![tests](https://github.com/GITHUB_USER/multimodal-drowsiness-detection/actions/workflows/tests.yml/badge.svg)](https://github.com/GITHUB_USER/multimodal-drowsiness-detection/actions/workflows/tests.yml)
+[![tests](https://github.com/notchkillerAI/multimodal-drowsiness-detection/actions/workflows/tests.yml/badge.svg)](https://github.com/notchkillerAI/multimodal-drowsiness-detection/actions/workflows/tests.yml)
 ![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)
 ![OpenCV](https://img.shields.io/badge/OpenCV-4.14-5C3EE8?logo=opencv&logoColor=white)
 ![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-1.30-005CED?logo=onnx&logoColor=white)
@@ -73,7 +73,7 @@ Sunglasses over the eyes from 5 to 9 s (grey band): both camera branches lose co
 Tested on macOS (Apple Silicon) with Python 3.14; any Python ≥ 3.12 should work.
 
 ```bash
-git clone https://github.com/GITHUB_USER/multimodal-drowsiness-detection.git
+git clone https://github.com/notchkillerAI/multimodal-drowsiness-detection.git
 cd multimodal-drowsiness-detection
 make setup      # .venv + all packages (dlib builds from source, about 3 minutes, needs cmake)
 make models     # downloads the face detector and the landmark model into models/
